@@ -370,8 +370,8 @@ def snk_elastix_stack_alignment():
     if resolution is None:
         from squirrel.library.ome_zarr import OMEZarrStore
         store = OMEZarrStore(input_ome_zarr_filepath, mode='r')
-        resolution = store.get_scale(0)
-        unit = store.get_unit()
+        resolution = store.metadata.scale(0)
+        unit = store.metadata.units
     dtype = str(data_h.dtype)
 
     assert common_args['batch_size'] in [2, 4, 8, 16, 32, 64, 128], 'Only allowing batch sizes of [2, 4, 8, 16, 32, 64, 128]!'
@@ -556,8 +556,8 @@ def snk_apply_transformation():
     if resolution is None:
         from squirrel.library.ome_zarr import OMEZarrStore
         store = OMEZarrStore(input_ome_zarr_filepath, mode='r')
-        resolution = store.get_scale(0)
-        unit = store.get_unit()
+        resolution = store.metadata.scale(0)
+        unit = store.metadata.units
     dtype = str(data_h.dtype)
 
     shapes = []
