@@ -65,14 +65,12 @@ def snk_normalize_stack():
     # Generate run.json ----------------------------------
 
     from squirrel.library.io import load_data_handle
-    from squirrel.library.ome_zarr import (
-        get_scale_of_downsample_level, get_ome_zarr_handle, get_unit_of_dataset
-    )
+    from squirrel.library.ome_zarr import OMEZarrStore
     data_h, shape_h = load_data_handle(input_ome_zarr_filepath, key='s0', pattern=None)
     batch_ids = [x for x in range(0, shape_h[0], common_args['batch_size'])]
-    ome_zarr_h = get_ome_zarr_handle(input_ome_zarr_filepath, key=None, mode='r')
-    resolution = get_scale_of_downsample_level(ome_zarr_h, 0)
-    unit = get_unit_of_dataset(ome_zarr_h)
+    ome_zarr_h = OMEZarrStore(input_ome_zarr_filepath, mode='r')
+    resolution = ome_zarr_h.metadata.scale(0)
+    unit = ome_zarr_h.metadata.units
     dtype = str(data_h.dtype)
 
     assert common_args['batch_size'] in [4, 8, 16, 32, 64], 'Only allowing batch sizes of [4, 8, 16, 32, 64]!'

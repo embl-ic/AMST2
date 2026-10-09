@@ -13,11 +13,11 @@ def _run_amst(parameter_yaml, verbose=False):
         os.makedirs(output_dirpath, exist_ok=True)
 
     if 'resolution' not in parameter_dict['general']:
-        from squirrel.library.ome_zarr import get_ome_zarr_handle, get_scale_of_downsample_level, get_unit_of_dataset
+        from squirrel.library.ome_zarr import OMEZarrStore
         input_ome_zarr_filepath = parameter_dict['general']['pre_align_dirpath']
-        ome_zarr_h = get_ome_zarr_handle(input_ome_zarr_filepath, key=None, mode='r')
-        resolution = get_scale_of_downsample_level(ome_zarr_h, 0)
-        unit = get_unit_of_dataset(ome_zarr_h)
+        ome_zarr_h = OMEZarrStore(input_ome_zarr_filepath, mode='r')
+        resolution = ome_zarr_h.metadata.scale(0)
+        unit = ome_zarr_h.metadata.units
         parameter_dict['general']['resolution'] = resolution
         parameter_dict['general']['unit'] = unit
 
