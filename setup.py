@@ -38,6 +38,6 @@ setup(
         'h5py',
         'tifffile',
         'ruamel.yaml',
-        'squirrel>=0.5.5'
+        'squirrel>=0.5.6'
     ]
 )
