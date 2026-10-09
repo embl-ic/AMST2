@@ -77,12 +77,9 @@ def run_snakemake_workflow(run_script, wf_name):
         print(f'\n\n{e}\n')
         return 1
 
-    # Convert collected lines to a single string
-    stderr_text = "".join(stderr_lines)
-    lines = [line.strip() for line in stderr_text.splitlines() if line.strip()]
-
-    # Check for success marker
-    if any("(100%) done" in line for line in lines[-10:]):
+    # Snakemake may exit successfully without running any jobs. Its progress
+    # messages are informative, but the subprocess exit code is authoritative.
+    if process.returncode == 0:
         print(
             "\033[F" * 6 +
             "_____________________________________________\n\n"
@@ -94,23 +91,13 @@ def run_snakemake_workflow(run_script, wf_name):
             flush=True
         )
         return 0
-    elif lines[-1].split(' ')[0][-6:] == 'Error:':
-        print(f'\n\n{stderr_text}')
-        print("_____________________________________________\n")
-        print(f"{wf_name} failed. See error above.")
-        print("_____________________________________________\n")
-        return 1
-    else:
-        print(f'\n\n{stderr_text}')
-        print("_____________________________________________\n")
-        print(f"{wf_name} failed.")
-        print(
-            "Check out {} for details or check out the output above!".format(
-                lines[-1] if lines else "the logs"
-            )
-        )
-        print("_____________________________________________\n")
-        return 1
+
+    stderr_text = "".join(stderr_lines)
+    print(f'\n\n{stderr_text}')
+    print("_____________________________________________\n")
+    print(f"{wf_name} failed (exit code {process.returncode}).")
+    print("_____________________________________________\n")
+    return 1
 
 
 def run_snakemake_workflow_old(
