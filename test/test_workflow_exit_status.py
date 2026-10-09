@@ -43,3 +43,23 @@ def test_failure_with_progress(monkeypatch):
 def test_failure_without_stderr(monkeypatch):
     print('Testing failed Snakemake execution with empty stderr')
     assert _run_with_stderr(monkeypatch, '', 2) == 1
+
+
+def test_failure_message_with_misleading_zero_exit(monkeypatch):
+    print('Testing explicit Snakemake job failure with misleading zero exit code')
+    log = ('1 of 9 steps (11%) done\n'
+           'Exiting because a job execution failed. Look above for error message\n'
+           'WorkflowError:\nAt least one job did not complete successfully.\n')
+    assert _run_with_stderr(monkeypatch, log, 0) == 1
+
+
+def test_no_completion_marker_with_zero_exit(monkeypatch):
+    print('Testing zero exit without a recognizable Snakemake success message')
+    assert _run_with_stderr(monkeypatch, 'Submitted job 42\n', 0) == 1
+
+
+def test_failure_after_full_progress(monkeypatch):
+    print('Testing explicit failure overrides earlier 100 percent progress')
+    log = ('9 of 9 steps (100%) done\n'
+           'WorkflowError:\nAt least one job did not complete successfully.\n')
+    assert _run_with_stderr(monkeypatch, log, 0) == 1

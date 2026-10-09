@@ -77,9 +77,22 @@ def run_snakemake_workflow(run_script, wf_name):
         print(f'\n\n{e}\n')
         return 1
 
-    # Snakemake may exit successfully without running any jobs. Its progress
-    # messages are informative, but the subprocess exit code is authoritative.
-    if process.returncode == 0:
+    # Require a successful exit AND a recognizable Snakemake completion log.
+    # A shell/cluster wrapper can return zero despite an underlying job failure.
+    stderr_text = "".join(stderr_lines)
+    completed = any(
+        int(match.group(1)) == int(match.group(2)) and int(match.group(2)) > 0
+        for match in re.finditer(
+            r"(\d+) of (\d+) steps \(100(?:\.0+)?%\) done", stderr_text
+        )
+    )
+    nothing_to_do = "Nothing to be done" in stderr_text
+    failed = any(message in stderr_text for message in (
+        "Exiting because a job execution failed",
+        "At least one job did not complete successfully",
+        "WorkflowError:",
+    ))
+    if process.returncode == 0 and not failed and (completed or nothing_to_do):
         print(
             "\033[F" * 6 +
             "_____________________________________________\n\n"
@@ -92,10 +105,9 @@ def run_snakemake_workflow(run_script, wf_name):
         )
         return 0
 
-    stderr_text = "".join(stderr_lines)
     print(f'\n\n{stderr_text}')
     print("_____________________________________________\n")
-    print(f"{wf_name} failed (exit code {process.returncode}).")
+    print(f"{wf_name} failed (exit code {process.returncode}; no valid Snakemake completion or failure detected).")
     print("_____________________________________________\n")
     return 1
 
