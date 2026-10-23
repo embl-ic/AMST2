@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os
 
 
@@ -51,6 +53,28 @@ def _compose_stage_transforms(transform_filepaths, output_filepath, verbose=Fals
     return output_filepath
 
 
+def _check_run_identity(parameter_dict, stages, output_dirpath):
+    """Reject reuse of a completed run with different effective inputs."""
+    manifest = os.path.join(output_dirpath, 'pre-align-run-identity.json')
+    configuration = json.dumps(parameter_dict, sort_keys=True, default=str)
+    external = {}
+    for stage, filepath in stages:
+        if stage == 'initial':
+            with open(filepath, 'rb') as handle:
+                external[os.path.abspath(filepath)] = hashlib.sha256(handle.read()).hexdigest()
+    identity = {'configuration': hashlib.sha256(configuration.encode()).hexdigest(),
+                'external_transforms': external}
+    if os.path.isfile(manifest):
+        with open(manifest) as handle:
+            if json.load(handle) != identity:
+                raise RuntimeError('Pre-align inputs or parameters changed. Use a fresh output directory.')
+    elif any(os.scandir(output_dirpath)):
+        raise RuntimeError('Pre-align output directory contains untracked results. Use a fresh directory.')
+    else:
+        with open(manifest, 'w') as handle:
+            json.dump(identity, handle, indent=2)
+
+
 def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
     import shutil
 
@@ -65,6 +89,7 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
 
     if not dryrun:
         os.makedirs(output_dirpath, exist_ok=True)
+        _check_run_identity(parameter_dict, stages, output_dirpath)
 
     if parameter_dict.get('stack_to_ome_zarr', {}).get('active', False):
         from .lib import run_stack_to_ome_zarr
@@ -82,14 +107,20 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
             if not dryrun and not os.path.isfile(filepath):
                 raise FileNotFoundError(f'Initial transforms not found: {filepath}')
             transforms.append(filepath)
-            parameter_dict.setdefault('apply_initial_transforms', {})
-            run_apply_transformation(
-                parameter_dict, parameter_key='apply_initial_transforms',
-                transforms_filepath=filepath, input_dirpath=current_input,
-                output_filename='initial.ome.zarr', dryrun=dryrun, verbose=verbose
+            needs_intermediate_stack = any(
+                next_stage in ('sbs', 'nsbs') for next_stage, _ in stages
             )
-            done = 'apply_initial_transforms/apply_initial_transforms.done'
-            current_input = os.path.join(output_dirpath, 'apply_initial_transforms/initial.ome.zarr')
+            if needs_intermediate_stack:
+                parameter_dict.setdefault('apply_initial_transforms', {})
+                run_apply_transformation(
+                    parameter_dict, parameter_key='apply_initial_transforms',
+                    transforms_filepath=filepath, input_dirpath=current_input,
+                    output_filename='initial.ome.zarr', dryrun=dryrun, verbose=verbose
+                )
+                done = 'apply_initial_transforms/apply_initial_transforms.done'
+                current_input = os.path.join(
+                    output_dirpath, 'apply_initial_transforms/initial.ome.zarr'
+                )
         else:
             key = f'{stage}_alignment'
             parameter_dict.setdefault(key, {})['apply_final'] = True
@@ -100,8 +131,9 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
             done = f'{key}/{key}.done'
             transforms.append(os.path.join(output_dirpath, key, f'{stage}.meta/elastix.json'))
             current_input = os.path.join(output_dirpath, key, f'{stage}.ome.zarr')
-        if not dryrun and not os.path.exists(os.path.join(output_dirpath, done)):
-            return
+        if stage != 'initial' or needs_intermediate_stack:
+            if not dryrun and not os.path.exists(os.path.join(output_dirpath, done)):
+                return
 
     final_filepath = os.path.join(output_dirpath, 'pre-align.json')
     combined_filepath = os.path.join(output_dirpath, 'pre-align-combined.json')
