@@ -164,7 +164,7 @@ def snk_amst():
             sn_args,
             [
                 'amst',
-                'join_transformations' if transform == 'bspline' else 'amst_preview'
+                'join_transformations' if transform == 'bspline' else 'finalize_amst_transforms'
             ],
             [24000, 8000],
             [30, 30],

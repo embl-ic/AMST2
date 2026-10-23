@@ -172,16 +172,13 @@ def snk_default_amst_pre_alignment():
             sn_args,
             [
                 'elastix_stack_alignment',
-                'local_alignment_preview',
                 'template_matching',
-                'template_matching_preview',
-                'finalize_and_join_transforms',
-                'final_preview',
+                'finalize_and_join_transformations',
                 'create_ome_zarr',
                 'apply_final_transformations'
             ],
-            [16000, 8000, 24000, 8000, 100, 8000, 1024, 8000],
-            [30, 30, 30, 30, 5, 30, 5, 30],
+            [16000, 24000, 100, 1024, 8000],
+            [30, 30, 5, 5, 30],
             mem_args=mem,
             runtime_args=runtime
         )
@@ -457,7 +454,7 @@ def snk_elastix_stack_alignment():
                 'apply_final_transformations'
             ],
             [16000, 8000, 1024, 8000],
-            [30, 30, 5, 30],
+            [30, 5, 5, 30],
             mem_args=mem,
             runtime_args=runtime
         )
@@ -803,12 +800,12 @@ def snk_template_matching_stack_alignment():
             sn_args,
             [
                 'template_matching',
-                'template_matching_preview',
+                'finalize_template_matching_transforms',
                 'create_ome_zarr',
                 'apply_final_transformations'
             ],
             [16000, 8000, 1024, 8000],
-            [30, 30, 5, 30],
+            [30, 5, 5, 30],
             mem_args=mem,
             runtime_args=runtime
         )
