@@ -81,12 +81,7 @@ def snk_default_amst_pre_alignment():
         fallback_output_name='pre-align.ome.zarr'
     )
     ome_zarr_args = args_to_dict(args, ome_zarr_fields)
-    meta_dirpath = os.path.join(
-        output_location_args['target_dirpath'],
-        f'{output_location_args["output_ome_zarr_filename"].replace(".ome.zarr", "")}.meta'
-    )
-    if not os.path.exists(meta_dirpath):
-        os.mkdir(meta_dirpath)
+    meta_dirpath = output_location_args['target_dirpath']
 
     # Generate run.json ----------------------------------
 
@@ -718,12 +713,7 @@ def snk_template_matching_stack_alignment():
         fallback_output_name='elastix.ome.zarr'
     )
     ome_zarr_args = args_to_dict(args, ome_zarr_fields)
-    meta_dirpath = os.path.join(
-        output_location_args['target_dirpath'],
-        f'{output_location_args["output_ome_zarr_filename"].replace(".ome.zarr", "")}.meta'
-    )
-    if not os.path.exists(meta_dirpath):
-        os.mkdir(meta_dirpath)
+    meta_dirpath = output_location_args['target_dirpath']
 
     # Generate run.json ----------------------------------
 

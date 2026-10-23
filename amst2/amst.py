@@ -84,12 +84,7 @@ def snk_amst():
         fallback_output_name='amst.ome.zarr'
     )
     ome_zarr_args = args_to_dict(args, ome_zarr_fields)
-    meta_dirpath = os.path.join(
-        output_location_args['target_dirpath'],
-        f'{output_location_args["output_ome_zarr_filename"].replace(".ome.zarr", "")}.meta'
-    )
-    if not os.path.exists(meta_dirpath):
-        os.mkdir(meta_dirpath)
+    meta_dirpath = output_location_args['target_dirpath']
 
     # Generate run.json ----------------------------------
 
