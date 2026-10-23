@@ -9,8 +9,6 @@ with open('run.json', mode='r') as f:
 
 this_cache_dirpath = run_info['this_cache_dirpath']
 batch_ids = run_info['batch_ids']
-preview = not run_info['no_preview']
-assert preview, 'Switching off previews is deprecated!'
 src_dirpath = run_info['src_dirpath']
 meta_dirpath = run_info['meta_dirpath']
 apply_final = run_info['apply_final']
@@ -22,8 +20,7 @@ print(f'run_info = {run_info}')
 
 def _rule_all_inputs(wildcards):
     inputs = []
-    if preview:
-        inputs.append(os.path.join(meta_dirpath, "elastix_preview.h5"))
+    inputs.append(os.path.join(meta_dirpath, "elastix.json"))
     if apply_final:
         inputs.extend([os.path.join(this_cache_dirpath, f"apply_final_transformations_{idx}.done") for idx in batch_ids])
     return inputs
@@ -53,8 +50,7 @@ def _get_target_stack_shape():
 
 
 rule create_ome_zarr:
-    # Normally this rule does not take inputs, but in this case I need to make sure that the
-    # preview job is done first. This gives the stack_shape information
+    # The finalized transform metadata provides the output stack shape.
     input:
         os.path.join(meta_dirpath,"elastix.json")
     output:
@@ -74,19 +70,17 @@ rule create_ome_zarr:
         os.path.join(src_dirpath, "snakemake_call_scripts", "create_ome_zarr.py")
 
 
-rule alignment_preview:
+rule finalize_alignment_transforms:
     input:
         expand(os.path.join(this_cache_dirpath, "elastix_{idx}.json"), idx=batch_ids)
     output:
-        os.path.join(meta_dirpath, "elastix_preview.h5"),
         os.path.join(meta_dirpath, "elastix.json")
     params:
         run_info=run_info,
-        save_joined_transforms=True,
         compute_auto_pad=auto_pad
     threads: 1
     script:
-        os.path.join(src_dirpath, "snakemake_call_scripts", "alignment_preview.py")
+        os.path.join(src_dirpath, "snakemake_call_scripts", "finalize_alignment_transforms.py")
 
 
 rule elastix_stack_alignment:
