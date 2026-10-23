@@ -49,7 +49,7 @@ if __name__ == '__main__':
 
     if stack_shape is None:
         if transforms.has_metadata('stack_shape'):
-            stack_shape = transforms.get_meta('stack_shape')
+            stack_shape = transforms.get_metadata('stack_shape')
         else:
             if input_filetype == 'ome_zarr':
                 stack_shape = input_fileh[run_info['stack_key']].shape
@@ -57,7 +57,7 @@ if __name__ == '__main__':
                 stack_shape = input_fileh.shape
 
     if not transforms.has_metadata('stack_shape'):
-        transforms.set_meta('stack_shape', stack_shape)
+        transforms.set_metadata('stack_shape', stack_shape)
 
     if transforms.has_metadata('z_step'):
         full_stack_shape = run_info['stack_shape']
