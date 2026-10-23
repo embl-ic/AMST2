@@ -23,8 +23,9 @@ def _alignment_stages(parameter_dict):
 def _compose_stage_transforms(transform_filepaths, output_filepath, verbose=False):
     """Compose stage transforms in execution order into one affine stack.
 
-    Each stage maps its input coordinates into its output coordinates.
-    Later stages therefore multiply on the left of earlier stages.
+    Transforms are output-to-input mappings for image resampling.
+    For stages A then B, source coordinates are A(B(output)), so
+    the combined mapping is A @ B.
     """
     import shutil
 
@@ -46,7 +47,7 @@ def _compose_stage_transforms(transform_filepaths, output_filepath, verbose=Fals
                   else os.path.join(os.path.dirname(output_filepath),
                                     f'pre-align-combined-{index}.json'))
         dot_product_on_affines_workflow(
-            [next_filepath, previous], target, keep_meta=1, verbose=verbose
+            [previous, next_filepath], target, keep_meta=0, verbose=verbose
         )
         previous = target
 
