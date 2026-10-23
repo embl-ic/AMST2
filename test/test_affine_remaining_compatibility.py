@@ -47,27 +47,6 @@ def test_join_affine_multiple_files_and_pivot(tmp_path):
                                [[1., 2.], [3., 3.], [2., 6.]])
 
 
-def test_preview_join_without_ome_zarr(tmp_path):
-    print('Testing workflow: preview joins affines and writes transform metadata ...')
-    a, b, preview, out = (tmp_path / name for name in
-                          ('a.json', 'b.json', 'preview.placeholder', 'joined.json'))
-    bounds = [[0., 0., 10., 12.], [0., 0., 10., 12.]]
-    _stack(a, [[1., 0.], [0., 2.]], metadata={'bounds': bounds})
-    _stack(b, [[1., 1.]], metadata={'bounds': [[0., 0., 10., 12.]]})
-    # Non-OME-Zarr input follows the placeholder-output branch.
-    import tifffile
-    tifffile.imwrite(tmp_path / "slice_000.tif", np.zeros((10, 12), dtype=np.uint8))
-    _run('alignment_preview.py', [a, b], [preview, out], {
-        'preview_downsample_level': 0, 'input_ome_zarr_filepath': str(tmp_path),
-        'verbose': False, 'stack_key': 'data', 'stack_pattern': '*.tif'
-    }, save_joined_transforms=True, compute_auto_pad=True)
-    result = AffineStack.read(out)
-    assert result.sequenced
-    assert result.has_metadata('stack_shape')
-    assert result.get_metadata('stack_shape')[0] == 3
-    assert preview.exists()
-
-
 def test_bspline_branch_preserves_existing_loader(tmp_path, monkeypatch):
     print('Testing workflow: B-spline join retains Elastix loader and writer ...')
     from squirrel.library import elastix

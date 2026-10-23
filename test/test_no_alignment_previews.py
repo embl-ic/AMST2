@@ -22,3 +22,11 @@ class TestNoAlignmentPreviews(unittest.TestCase):
     def test_preview_script_removed(self):
         scripts = Path(__file__).resolve().parents[1] / 'amst2' / 'snakemake_call_scripts'
         self.assertFalse((scripts / 'alignment_preview.py').exists())
+
+    def test_no_preview_options_in_alignment_entrypoints(self):
+        root = Path(__file__).resolve().parents[1] / 'amst2'
+        for name in ('amst.py', 'stack_alignment.py'):
+            with self.subTest(name=name):
+                contents = (root / name).read_text()
+                self.assertNotIn("parser.add_argument('--no_preview", contents)
+                self.assertNotIn("parser.add_argument('--preview_downsample_level", contents)

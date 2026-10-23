@@ -19,7 +19,6 @@ general:
 
 stack_to_ome_zarr:
   # When active = true, the input dataset will be converted to ome.zarr
-  # This enables an alignment preview for the alignment steps below but otherwise is not necessary
   active: false
 
 workflow:
@@ -40,7 +39,6 @@ sbs_alignment:
   elx_number_of_resolutions: 2  # Increase for bigger initial jumps, if not using init_elx above
   elx_number_of_spatial_samples: 2048  # Increase for large images
   elx_maximum_number_of_iterations: 256  # Increase for finer alignment
-  preview_downsample_level: 3
   runtime:
     elastix_stack_alignment: 60
   mem:
@@ -51,7 +49,6 @@ nsbs_alignment:
   z_step: 8  # Adjust the z-step if needed
   auto_mask: non-zero
   gaussian_sigma: 2.0
-  preview_downsample_level: 2
   runtime:
     elastix_stack_alignment: 60
   mem:

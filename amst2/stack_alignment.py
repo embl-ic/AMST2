@@ -41,8 +41,6 @@ def snk_default_amst_pre_alignment():
                         help='Median smoothing of offsets when combining local and TM')
     parser.add_argument('-cs', '--combine_sigma', type=float, default=8.,
                         help='Gaussian smoothing of offsets when combining local and TM')
-    parser.add_argument('--no_previews', action='store_true',
-                        help='No preview outputs are generated for the alignement steps')
     parser.add_argument('--mem', type=str, nargs='+', default=None,
                         help='Cluster job memory amounts for the snakemake rules.\n'
                              'For each rule define like so:\n'
@@ -51,8 +49,6 @@ def snk_default_amst_pre_alignment():
                         help='Cluster job runtimes for the snakemake rules. \n'
                              'For each rule define like so:\n'
                              '"rule_name:30"')
-    parser.add_argument('--preview_downsample_level', type=int, default=2,
-                        help='Downsample level of preview volumes; default=2')
 
     common_arg_fields = add_common_arguments_to_parser(parser)
     add_output_locations_to_parser(parser)
@@ -68,9 +64,7 @@ def snk_default_amst_pre_alignment():
     template_roi = args.template_roi
     combine_median = args.combine_median
     combine_sigma = args.combine_sigma
-    no_previews = args.no_previews
     tm_search_roi = args.tm_search_roi
-    preview_downsample_level = args.preview_downsample_level
     mem = args.mem
     runtime = args.runtime
 
@@ -113,11 +107,9 @@ def snk_default_amst_pre_alignment():
         use_template_matching=template_roi is not None,
         combine_median=combine_median,
         combine_sigma=combine_sigma,
-        no_previews=no_previews,
         batch_ids=batch_ids,
         stack_shape=shape_h,
         src_dirpath=src_dirpath,
-        preview_downsample_level=preview_downsample_level,
         output_dtype=dtype,
         resolution=resolution,
         unit=unit,
@@ -234,8 +226,6 @@ def snk_elastix_stack_alignment():
     parser.add_argument('--materialize_output', '--apply_final',
                         dest='materialize_output', action='store_true',
                         help='Apply the final transformation and create result ome-zarr')
-    parser.add_argument('--no_preview', action='store_true',
-                        help='No preview outputs are generated for the alignement steps')
     parser.add_argument('--initialize_offsets_method', type=str, default=None,
                         help='Method to solve big jumps: ["xcorr", "init_elx"]\n'
                              '  "xcorr": Big jumps are detected by the intersection over union of the data in adjacent '
@@ -282,8 +272,6 @@ def snk_elastix_stack_alignment():
                         help='Cluster job runtimes for the snakemake rules. \n'
                              'For each rule define like so:\n'
                              '"rule_name:30"')
-    parser.add_argument('--preview_downsample_level', type=int, default=2,
-                        help='Downsample level of preview volumes; default=2')
     parser.add_argument('--debug', action='store_true',
                         help='Set this for saving intermediate files, helpful for debugging')
 
@@ -309,7 +297,6 @@ def snk_elastix_stack_alignment():
     auto_pad = args.auto_pad
     determine_bounds = args.determine_bounds
     materialize_output = args.materialize_output
-    no_preview = args.no_preview
     initialize_offsets_method = args.initialize_offsets_method
     initialize_offsets_kwargs = args.initialize_offsets_kwargs
     max_offset_distance = args.max_offset_distance
@@ -318,7 +305,6 @@ def snk_elastix_stack_alignment():
     elx_number_of_spatial_samples = args.elx_number_of_spatial_samples
     elx_maximum_number_of_iterations = args.elx_maximum_number_of_iterations
     elx_microscopy_preset = args.elx_microscopy_preset
-    preview_downsample_level = args.preview_downsample_level
     mem = args.mem
     runtime = args.runtime
     debug = args.debug
@@ -383,11 +369,9 @@ def snk_elastix_stack_alignment():
         input_ome_zarr_filepath=input_ome_zarr_filepath,
         stack_pattern=stack_pattern,
         stack_key=stack_key,
-        no_preview=no_preview,
         batch_ids=batch_ids,
         stack_shape=shape_h,
         src_dirpath=src_dirpath,
-        preview_downsample_level=preview_downsample_level,
         output_dtype=dtype,
         resolution=resolution,
         unit=unit,
@@ -444,7 +428,6 @@ def snk_elastix_stack_alignment():
             sn_args,
             [
                 'elastix_stack_alignment',
-                'alignment_preview',
                 'create_ome_zarr',
                 'apply_final_transformations'
             ],
@@ -673,8 +656,6 @@ def snk_template_matching_stack_alignment():
                         help='Determine the bounds of each slice; Implicit for auto_pad')
     parser.add_argument('--apply_final', action='store_true',
                         help='Apply the final transformation and create result ome-zarr')
-    parser.add_argument('--no_preview', action='store_true',
-                        help='No preview outputs are generated for the alignement steps')
     parser.add_argument('--mem', type=str, nargs='+', default=None,
                         help='Cluster job memory amounts for the snakemake rules.\n'
                              'For each rule define like so:\n'
@@ -683,8 +664,6 @@ def snk_template_matching_stack_alignment():
                         help='Cluster job runtimes for the snakemake rules. \n'
                              'For each rule define like so:\n'
                              '"rule_name:30"')
-    parser.add_argument('--preview_downsample_level', type=int, default=2,
-                        help='Downsample level of preview volumes; default=2')
 
     common_arg_fields = add_common_arguments_to_parser(parser)
     add_output_locations_to_parser(parser)
@@ -701,8 +680,6 @@ def snk_template_matching_stack_alignment():
     auto_pad = args.auto_pad
     determine_bounds = args.determine_bounds
     apply_final = args.apply_final
-    no_preview = args.no_preview
-    preview_downsample_level = args.preview_downsample_level
     mem = args.mem
     runtime = args.runtime
 
@@ -742,11 +719,9 @@ def snk_template_matching_stack_alignment():
 
     run_info = dict(
         input_ome_zarr_filepath=input_ome_zarr_filepath,
-        no_preview=no_preview,
         batch_ids=batch_ids,
         stack_shape=shape_h,
         src_dirpath=src_dirpath,
-        preview_downsample_level=preview_downsample_level,
         output_dtype=dtype,
         resolution=resolution,
         unit=unit,
