@@ -1,3 +1,6 @@
+import os
+
+
 def _alignment_stages(parameter_dict):
     """Return enabled stages in their execution order."""
     workflow = parameter_dict.get('workflow', {})
@@ -12,6 +15,40 @@ def _alignment_stages(parameter_dict):
     if not stages:
         raise ValueError('Enable at least one of initial transforms, SBS, or NSBS')
     return stages
+
+
+
+def _compose_stage_transforms(transform_filepaths, output_filepath, verbose=False):
+    """Compose stage transforms in execution order into one affine stack.
+
+    Each stage maps its input coordinates into its output coordinates.
+    Later stages therefore multiply on the left of earlier stages.
+    """
+    import shutil
+
+    if not transform_filepaths:
+        raise ValueError('At least one transformation stack is required')
+
+    if len(transform_filepaths) == 1:
+        if os.path.abspath(transform_filepaths[0]) != os.path.abspath(output_filepath):
+            shutil.copyfile(transform_filepaths[0], output_filepath)
+        return output_filepath
+
+    from squirrel.workflows.transformation import dot_product_on_affines_workflow
+
+    # Keep intermediate files distinct from the final output. The final
+    # composition retains metadata from the earliest (original-input) stage.
+    previous = transform_filepaths[0]
+    for index, next_filepath in enumerate(transform_filepaths[1:], start=1):
+        target = (output_filepath if index == len(transform_filepaths) - 1
+                  else os.path.join(os.path.dirname(output_filepath),
+                                    f'pre-align-combined-{index}.json'))
+        dot_product_on_affines_workflow(
+            [next_filepath, previous], target, keep_meta=1, verbose=verbose
+        )
+        previous = target
+
+    return output_filepath
 
 
 def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
@@ -72,17 +109,7 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
         print(f'Compose transforms in order: {transforms} -> {combined_filepath}')
         print(f'Finalize transforms: {combined_filepath} -> {final_filepath}')
     else:
-        from squirrel.workflows.transformation import dot_product_on_affines_workflow
-        if len(transforms) == 1:
-            shutil.copyfile(transforms[0], combined_filepath)
-        else:
-            for index, filepath in enumerate(transforms[1:], start=1):
-                target = combined_filepath if index == len(transforms) - 1 else os.path.join(
-                    output_dirpath, f'pre-align-combined-{index}.json')
-                source = transforms[0] if index == 1 else os.path.join(
-                    output_dirpath, f'pre-align-combined-{index - 1}.json')
-                dot_product_on_affines_workflow([source, filepath], target,
-                                                keep_meta=0, verbose=verbose)
+        _compose_stage_transforms(transforms, combined_filepath, verbose=verbose)
         if parameter_dict['general'].get('auto_pad', False):
             from squirrel.workflows.transformation import apply_auto_pad_workflow
             apply_auto_pad_workflow(combined_filepath, final_filepath,
