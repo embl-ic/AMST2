@@ -52,8 +52,8 @@ class TestPreAlignNsbsIntegration(unittest.TestCase):
 
         expected = (
             'nsbs_alignment/nsbs_alignment.done',
-            'nsbs_alignment/nsbs.meta/elastix.json',
-            'pre-align-combined.json',
+            'nsbs_alignment/elastix.json',
+            '.amst2/run-identity.json',
             'pre-align.json',
             'apply_pre_align/apply_pre_align.done',
             'apply_pre_align/pre-align.ome.zarr',
@@ -63,6 +63,9 @@ class TestPreAlignNsbsIntegration(unittest.TestCase):
                             f'Missing workflow result: {relative_path}')
 
         self.assertFalse((output_path / 'nsbs_alignment/nsbs.ome.zarr').exists())
+        self.assertFalse((output_path / 'nsbs_alignment/nsbs.meta').exists())
+        self.assertFalse((output_path / 'pre-align-combined.json').exists())
+        self.assertFalse((output_path / 'pre-align-run-identity.json').exists())
         self.assertFalse((output_path / 'sbs_alignment').exists())
         self.assertFalse((output_path / 'apply_initial_transforms').exists())
 

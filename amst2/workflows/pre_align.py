@@ -28,6 +28,7 @@ def _compose_stage_transforms(transform_filepaths, output_filepath, verbose=Fals
     the combined mapping is A @ B.
     """
     import shutil
+    import tempfile
 
     if not transform_filepaths:
         raise ValueError('At least one transformation stack is required')
@@ -39,24 +40,24 @@ def _compose_stage_transforms(transform_filepaths, output_filepath, verbose=Fals
 
     from squirrel.workflows.transformation import dot_product_on_affines_workflow
 
-    # Keep intermediate files distinct from the final output. The final
-    # composition retains metadata from the earliest (original-input) stage.
-    previous = transform_filepaths[0]
-    for index, next_filepath in enumerate(transform_filepaths[1:], start=1):
-        target = (output_filepath if index == len(transform_filepaths) - 1
-                  else os.path.join(os.path.dirname(output_filepath),
-                                    f'pre-align-combined-{index}.json'))
-        dot_product_on_affines_workflow(
-            [previous, next_filepath], target, keep_meta=0, verbose=verbose
-        )
-        previous = target
+    # Keep partial compositions temporary; only the requested output persists.
+    with tempfile.TemporaryDirectory() as directory:
+        previous = transform_filepaths[0]
+        for index, next_filepath in enumerate(transform_filepaths[1:], start=1):
+            target = (output_filepath if index == len(transform_filepaths) - 1
+                      else os.path.join(directory, f'combined-{index}.json'))
+            dot_product_on_affines_workflow(
+                [previous, next_filepath], target, keep_meta=0, verbose=verbose
+            )
+            previous = target
 
     return output_filepath
 
 
 def _check_run_identity(parameter_dict, stages, output_dirpath):
     """Reject reuse of a completed run with different effective inputs."""
-    manifest = os.path.join(output_dirpath, 'pre-align-run-identity.json')
+    manifest_dirpath = os.path.join(output_dirpath, '.amst2')
+    manifest = os.path.join(manifest_dirpath, 'run-identity.json')
     configuration = json.dumps(parameter_dict, sort_keys=True, default=str)
     external = {}
     for stage, filepath in stages:
@@ -72,12 +73,12 @@ def _check_run_identity(parameter_dict, stages, output_dirpath):
     elif any(os.scandir(output_dirpath)):
         raise RuntimeError('Pre-align output directory contains untracked results. Use a fresh directory.')
     else:
+        os.makedirs(manifest_dirpath, exist_ok=True)
         with open(manifest, 'w') as handle:
             json.dump(identity, handle, indent=2)
 
 
 def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
-    import shutil
 
     from .lib import load_parameter_yaml
     from .lib import run_apply_transformation
@@ -128,7 +129,7 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
             run_nsbs_alignment(parameter_dict, parameter_key=key,
                                input_dirpath=current_input, dryrun=dryrun, verbose=verbose)
             done = f'{key}/{key}.done'
-            transforms.append(os.path.join(output_dirpath, key, f'{stage}.meta/elastix.json'))
+            transforms.append(os.path.join(output_dirpath, key, 'elastix.json'))
             if has_next_stage:
                 current_input = os.path.join(output_dirpath, key, f'{stage}.ome.zarr')
         if stage != 'initial' or has_next_stage:
@@ -136,21 +137,26 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
                 return
 
     final_filepath = os.path.join(output_dirpath, 'pre-align.json')
-    combined_filepath = os.path.join(output_dirpath, 'pre-align-combined.json')
+    auto_pad = parameter_dict['general'].get('auto_pad', False)
     if dryrun:
-        print(f'Compose transforms in order: {transforms} -> {combined_filepath}')
-        print(f'Finalize transforms: {combined_filepath} -> {final_filepath}')
-    else:
-        _compose_stage_transforms(transforms, combined_filepath, verbose=verbose)
-        if parameter_dict['general'].get('auto_pad', False):
-            from squirrel.workflows.transformation import apply_auto_pad_workflow
+        print(f'Compose transforms in order: {transforms} -> {final_filepath}')
+        if auto_pad:
+            print(f'Apply auto-padding to final transforms: {final_filepath}')
+    elif auto_pad:
+        import tempfile
+
+        from squirrel.workflows.transformation import apply_auto_pad_workflow
+
+        with tempfile.TemporaryDirectory() as directory:
+            combined_filepath = os.path.join(directory, 'combined.json')
+            _compose_stage_transforms(transforms, combined_filepath, verbose=verbose)
             apply_auto_pad_workflow(combined_filepath, final_filepath,
                                     image_stack_path=original_input,
                                     key=parameter_dict['general'].get('stack_key', 's0'),
                                     pattern=parameter_dict['general'].get('stack_pattern', '*.tif'),
                                     verbose=verbose)
-        else:
-            shutil.copyfile(combined_filepath, final_filepath)
+    else:
+        _compose_stage_transforms(transforms, final_filepath, verbose=verbose)
 
     run_apply_transformation(
         parameter_dict, parameter_key='apply_pre_align',
