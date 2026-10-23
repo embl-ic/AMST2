@@ -1,144 +1,117 @@
-import os
+def _alignment_stages(parameter_dict):
+    """Return enabled stages in their execution order."""
+    workflow = parameter_dict.get('workflow', {})
+    initial = workflow.get('pre_existing_transforms')
+    stages = []
+    if initial:
+        stages.append(('initial', initial))
+    if workflow.get('run_sbs', True):
+        stages.append(('sbs', None))
+    if workflow.get('run_nsbs', True):
+        stages.append(('nsbs', None))
+    if not stages:
+        raise ValueError('Enable at least one of initial transforms, SBS, or NSBS')
+    return stages
 
 
-def _run_nsbs_pre_align(parameter_yaml, dryrun=False, verbose=False):
+def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
+    import shutil
 
     from .lib import load_parameter_yaml
+    from .lib import run_apply_transformation
+    from .lib import run_nsbs_alignment
+
     parameter_dict = load_parameter_yaml(parameter_yaml)
-    if verbose:
-        print(f'parameter_dict = {parameter_dict}')
-
+    stages = _alignment_stages(parameter_dict)
     output_dirpath = parameter_dict['general']['output_dirpath']
+    original_input = parameter_dict['general']['input_dirpath']
 
-    if not dryrun and not os.path.exists(output_dirpath):
+    if not dryrun:
         os.makedirs(output_dirpath, exist_ok=True)
 
-    if 'stack_to_ome_zarr' in parameter_dict and parameter_dict['stack_to_ome_zarr']['active']:
+    if parameter_dict.get('stack_to_ome_zarr', {}).get('active', False):
         from .lib import run_stack_to_ome_zarr
-        run_stack_to_ome_zarr(parameter_dict, parameter_key='stack_to_ome_zarr', dryrun=dryrun, verbose=verbose)
-        input_dirpath = os.path.join(output_dirpath, 'stack_to_ome_zarr/input-raw.ome.zarr')
-        if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'stack_to_ome_zarr', 'stack_to_ome_zarr.done')):
+        run_stack_to_ome_zarr(parameter_dict, parameter_key='stack_to_ome_zarr',
+                              dryrun=dryrun, verbose=verbose)
+        original_input = os.path.join(output_dirpath, 'stack_to_ome_zarr/input-raw.ome.zarr')
+        if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'stack_to_ome_zarr/stack_to_ome_zarr.done')):
             return
         parameter_dict['general']['stack_key'] = 's0'
-    else:
-        input_dirpath = None
 
-    from .lib import run_nsbs_alignment
-    parameter_dict['sbs_alignment']['apply_final'] = True
-    run_nsbs_alignment(
-        parameter_dict, parameter_key='sbs_alignment',
-        input_dirpath=input_dirpath,
-        dryrun=dryrun,
-        verbose=verbose
-    )
-
-    if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'sbs_alignment', 'sbs_alignment.done')):
-        return
-
-    parameter_dict['nsbs_alignment']['stack_key'] = 's0'
-    from .lib import run_nsbs_alignment
-    run_nsbs_alignment(
-        parameter_dict, parameter_key='nsbs_alignment',
-        input_dirpath=os.path.join(output_dirpath, 'sbs_alignment/sbs.ome.zarr'),
-        dryrun=dryrun,
-        verbose=verbose
-    )
-
-    if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'nsbs_alignment', 'nsbs_alignment.done')):
-        return
-    
-    if not dryrun:
-
-        from squirrel.workflows.transformation import dot_product_on_affines_workflow
-        dot_product_on_affines_workflow(
-            [
-                os.path.join(output_dirpath, 'sbs_alignment/sbs.meta/elastix.json'),
-                os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/elastix.json')
-            ],
-            os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/combined.json'),
-            keep_meta=0,
-            verbose=verbose
-        )
-        if not os.path.exists(os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/combined.json')):
-            return
-        
-        if parameter_dict['general']['auto_pad']:
-            from squirrel.workflows.transformation import apply_auto_pad_workflow
-            apply_auto_pad_workflow(
-                os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/combined.json'),
-                os.path.join(output_dirpath, 'nsbs-pre-align.json'),
-                verbose=verbose
+    current_input = original_input
+    transforms = []
+    for stage, filepath in stages:
+        if stage == 'initial':
+            if not dryrun and not os.path.isfile(filepath):
+                raise FileNotFoundError(f'Initial transforms not found: {filepath}')
+            transforms.append(filepath)
+            parameter_dict.setdefault('apply_initial_transforms', {})
+            run_apply_transformation(
+                parameter_dict, parameter_key='apply_initial_transforms',
+                transforms_filepath=filepath, input_dirpath=current_input,
+                output_filename='initial.ome.zarr', dryrun=dryrun, verbose=verbose
             )
+            done = 'apply_initial_transforms/apply_initial_transforms.done'
+            current_input = os.path.join(output_dirpath, 'apply_initial_transforms/initial.ome.zarr')
         else:
-            import shutil
-            shutil.copy(
-                os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/combined.json'),
-                os.path.join(output_dirpath, 'nsbs-pre-align.json')
-            )   
+            key = f'{stage}_alignment'
+            parameter_dict.setdefault(key, {})['apply_final'] = True
+            if stage == 'nsbs':
+                parameter_dict[key]['stack_key'] = 's0' if current_input != original_input else parameter_dict['general'].get('stack_key', 's0')
+            run_nsbs_alignment(parameter_dict, parameter_key=key,
+                               input_dirpath=current_input, dryrun=dryrun, verbose=verbose)
+            done = f'{key}/{key}.done'
+            transforms.append(os.path.join(output_dirpath, key, f'{stage}.meta/elastix.json'))
+            current_input = os.path.join(output_dirpath, key, f'{stage}.ome.zarr')
+        if not dryrun and not os.path.exists(os.path.join(output_dirpath, done)):
+            return
 
+    final_filepath = os.path.join(output_dirpath, 'pre-align.json')
+    combined_filepath = os.path.join(output_dirpath, 'pre-align-combined.json')
+    if dryrun:
+        print(f'Compose transforms in order: {transforms} -> {combined_filepath}')
+        print(f'Finalize transforms: {combined_filepath} -> {final_filepath}')
     else:
-        print(
-            '\nRunning in python:\n'
-            '```\n'
-            'from squirrel.workflows.transformation import dot_product_on_affines_workflow\n'
-            '    dot_product_on_affines_workflow(\n'
-            '        [\n'
-            "            os.path.join(output_dirpath, 'sbs_alignment/sbs.meta/elastix.json'),\n"
-            "            os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/elastix.json')\n"
-            '        ],\n'
-            "        os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/combined.json'),\n"
-            '        keep_meta=0,\n'
-            '        verbose=verbose\n'
-            ')\n\n'
-            "if parameter_dict['general']['auto_pad']:\n"
-            "    from squirrel.workflows.transformation import apply_auto_pad_workflow\n"
-            "    apply_auto_pad_workflow(\n"
-            "        os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/combined.json'),\n"
-            "        os.path.join(output_dirpath, 'nsbs-pre-align.json'),\n"
-            "        verbose=verbose\n"
-            "    )\n"
-            "else:\n"
-            "    import shutil\n"
-            "    shutil.copy(\n"
-            "        os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/combined.json'),\n"
-            "        os.path.join(output_dirpath, 'nsbs-pre-align.json')\n"
-            "    )               \n"
-            '```'
-        )
+        from squirrel.workflows.transformation import dot_product_on_affines_workflow
+        if len(transforms) == 1:
+            shutil.copyfile(transforms[0], combined_filepath)
+        else:
+            for index, filepath in enumerate(transforms[1:], start=1):
+                target = combined_filepath if index == len(transforms) - 1 else os.path.join(
+                    output_dirpath, f'pre-align-combined-{index}.json')
+                source = transforms[0] if index == 1 else os.path.join(
+                    output_dirpath, f'pre-align-combined-{index - 1}.json')
+                dot_product_on_affines_workflow([source, filepath], target,
+                                                keep_meta=0, verbose=verbose)
+        if parameter_dict['general'].get('auto_pad', False):
+            from squirrel.workflows.transformation import apply_auto_pad_workflow
+            apply_auto_pad_workflow(combined_filepath, final_filepath,
+                                    image_stack_path=original_input,
+                                    key=parameter_dict['general'].get('stack_key', 's0'),
+                                    pattern=parameter_dict['general'].get('stack_pattern', '*.tif'),
+                                    verbose=verbose)
+        else:
+            shutil.copyfile(combined_filepath, final_filepath)
 
-    if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'nsbs-pre-align.json')):
-        return
-
-    from .lib import run_apply_transformation
     run_apply_transformation(
-        parameter_dict,
-        parameter_key='apply_pre_align',
-        transforms_filepath=os.path.join(output_dirpath, 'nsbs-pre-align.json'),
-        input_dirpath=input_dirpath,
-        output_filename='nsbs-pre-align.ome.zarr',
-        dryrun=dryrun,
-        verbose=verbose
+        parameter_dict, parameter_key='apply_pre_align',
+        transforms_filepath=final_filepath, input_dirpath=original_input,
+        output_filename='pre-align.ome.zarr', dryrun=dryrun, verbose=verbose
     )
-
-    if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'apply_pre_align', 'apply_pre_align.done')):
+    if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'apply_pre_align/apply_pre_align.done')):
         return
 
-    if 'pre_align_to_tif_stack' in parameter_dict and parameter_dict['pre_align_to_tif_stack']['active']:
+    if parameter_dict.get('pre_align_to_tif_stack', {}).get('active', False):
         from .lib import run_ome_zarr_to_stack
         run_ome_zarr_to_stack(
-            parameter_dict,
-            parameter_key='pre_align_to_tif_stack',
-            input_dirpath=os.path.join(output_dirpath, 'apply_pre_align/nsbs-pre-align.ome.zarr'),
-            output_dirname='nsbs-pre-align',
-            dryrun=dryrun,
-            verbose=verbose
+            parameter_dict, parameter_key='pre_align_to_tif_stack',
+            input_dirpath=os.path.join(output_dirpath, 'apply_pre_align/pre-align.ome.zarr'),
+            output_dirname='pre-align', dryrun=dryrun, verbose=verbose
         )
 
-    if dryrun:
-        print('')
 
 
-def nsbs_pre_align():
+def pre_align():
 
     # Argument parsing -----------------------------------
 
@@ -150,7 +123,7 @@ def nsbs_pre_align():
     )
 
     parser.add_argument('parameter_yaml', type=str,
-                        help='Parameter file. Run `amst2-wf-nsbs_pre_align-get_default_parameter_file` to generate it.')
+                        help='Parameter file. Run `amst2-wf-pre_align-get_default_parameter_file` to generate it.')
     parser.add_argument('-d', '--dryrun', action='store_true',
                         help='Dry-run: Displays the amst2 commands that would be run.')
     parser.add_argument('-v', '--verbose', action='store_true')
@@ -165,7 +138,7 @@ def nsbs_pre_align():
         print(f'parameter_yaml = {parameter_yaml}')
         print(f'dryrun = {dryrun}')
 
-    _run_nsbs_pre_align(parameter_yaml, dryrun=dryrun, verbose=verbose)
+    _run_pre_align(parameter_yaml, dryrun=dryrun, verbose=verbose)
 
 
 def _run_cleanup_nsbs_pre_align(parameter_yaml, verbose=False, dryrun=False):

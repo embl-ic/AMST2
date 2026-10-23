@@ -1,7 +1,7 @@
 # This is an example parameter file for the nth-slice-by-slice pre-alignment workflow
 # Copy this parameter file to your desired location and adjust to your needs
 # Then run the workflow using:
-#    amst2-wf-nsbs_pre_align-run /path/to/my/params-nsbs-pre-align-local.yaml
+#    amst2-wf-pre_align-run /path/to/my/params-nsbs-pre-align-local.yaml
 # This parameter file has been tested on the first 32 slices of the https://www.ebi.ac.uk/empiar/EMPIAR-10311/ dataset
 
 general:
@@ -20,6 +20,11 @@ stack_to_ome_zarr:
   # When active = true, the input dataset will be converted to ome.zarr
   # This enables an alignment preview for the alignment steps below but otherwise is not necessary
   active: false
+
+workflow:
+  pre_existing_transforms: null
+  run_sbs: true
+  run_nsbs: true
 
 sbs_alignment:
   auto_mask: non-zero  # non-zero or variance

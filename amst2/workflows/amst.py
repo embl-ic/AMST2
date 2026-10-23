@@ -30,7 +30,7 @@ def _run_amst(parameter_yaml, verbose=False):
     run_amst(
         parameter_dict,
         parameter_key='amst',
-        pre_align_dirpath=os.path.join(output_dirpath, 'apply_pre_align', 'nsbs-pre-align.ome.zarr'),
+        pre_align_dirpath=os.path.join(output_dirpath, 'apply_pre_align', 'pre-align.ome.zarr'),
         verbose=verbose
     )
 
@@ -39,7 +39,7 @@ def _run_amst(parameter_yaml, verbose=False):
 
     from .lib import run_apply_transformation
     apply_amst_param_key = 'apply_amst'
-    pre_align_transforms = os.path.join(output_dirpath, 'nsbs-pre-align.json')
+    pre_align_transforms = os.path.join(output_dirpath, 'pre-align.json')
     pre_align_transforms = parameter_dict['general']['pre_align_transforms'] if 'pre_align_transforms' in parameter_dict['general'] else pre_align_transforms
     pre_align_transforms = parameter_dict[apply_amst_param_key]['pre_align_transforms'] if 'pre_align_transforms' in parameter_dict[apply_amst_param_key] else pre_align_transforms
     input_dirpath = os.path.join(output_dirpath, 'stack_to_ome_zarr', 'input-raw.ome.zarr')
@@ -202,7 +202,7 @@ def get_default_parameter_file():
     parser.add_argument('-fp', '--output_filepath', type=str, default=None,
                         help='Filepath of the parameter file. By default it is created in the current directory')
     parser.add_argument('-pay', '--pre_align_yaml', type=str, default=None,
-                        help='If the pre-alignment was performed with amst2-wf-nsbs_pre_align_run, set this argument. All input filepaths will be properly set.')
+                        help='If the pre-alignment was performed with amst2-wf-pre_align-run, set this argument. All input filepaths will be properly set.')
     parser.add_argument('-pi', '--param_input_dirpath', type=str, default=None,
                         help='The parameter "general:input_dirpath" will be pre-set to this value')
     parser.add_argument('-po', '--param_output_dirpath', type=str, default=None,
@@ -246,9 +246,9 @@ def get_default_parameter_file():
         else:
             param_input_dirpath = pre_align_dict['general']['input_dirpath'] if param_input_dirpath is None else param_input_dirpath
         if param_pre_align_dirpath is None:
-            param_pre_align_dirpath = os.path.join(pre_align_output_dirpath, 'apply_pre_align', 'nsbs-pre-align.ome.zarr') if param_pre_align_dirpath is None else param_pre_align_dirpath
+            param_pre_align_dirpath = os.path.join(pre_align_output_dirpath, 'apply_pre_align', 'pre-align.ome.zarr') if param_pre_align_dirpath is None else param_pre_align_dirpath
         if param_pre_align_transforms is None:
-            param_pre_align_transforms = os.path.join(pre_align_output_dirpath, 'nsbs-pre-align.json') if param_pre_align_transforms is None else param_pre_align_transforms
+            param_pre_align_transforms = os.path.join(pre_align_output_dirpath, 'pre-align.json') if param_pre_align_transforms is None else param_pre_align_transforms
         if 'stack_key' in pre_align_dict['general']:
             if params is None:
                 params = []
