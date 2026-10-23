@@ -123,7 +123,7 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
                 )
         else:
             key = f'{stage}_alignment'
-            parameter_dict.setdefault(key, {})['apply_final'] = has_next_stage
+            parameter_dict.setdefault(key, {})['materialize_output'] = has_next_stage
             if stage == 'nsbs':
                 parameter_dict[key]['stack_key'] = 's0' if current_input != original_input else parameter_dict['general'].get('stack_key', 's0')
             run_nsbs_alignment(parameter_dict, parameter_key=key,

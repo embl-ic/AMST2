@@ -51,7 +51,7 @@ class TestPreAlignMaterialization(unittest.TestCase):
                     def record_alignment(parameters, **kwargs):
                         key = kwargs['parameter_key']
                         calls.append((key, kwargs['input_dirpath'],
-                                      parameters[key]['apply_final']))
+                                      parameters[key]['materialize_output']))
 
                     def record_apply(parameters, **kwargs):
                         calls.append((kwargs['parameter_key'],

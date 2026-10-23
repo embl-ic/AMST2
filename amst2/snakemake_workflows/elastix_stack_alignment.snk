@@ -11,7 +11,7 @@ this_cache_dirpath = run_info['this_cache_dirpath']
 batch_ids = run_info['batch_ids']
 src_dirpath = run_info['src_dirpath']
 meta_dirpath = run_info['meta_dirpath']
-apply_final = run_info['apply_final']
+materialize_output = run_info['materialize_output']
 auto_pad = run_info['auto_pad']
 determine_bounds = run_info['determine_bounds'] or auto_pad
 
@@ -21,7 +21,7 @@ print(f'run_info = {run_info}')
 def _rule_all_inputs(wildcards):
     inputs = []
     inputs.append(os.path.join(meta_dirpath, "elastix.json"))
-    if apply_final:
+    if materialize_output:
         inputs.extend([os.path.join(this_cache_dirpath, f"apply_final_transformations_{idx}.done") for idx in batch_ids])
     return inputs
 

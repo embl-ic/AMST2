@@ -239,7 +239,8 @@ def snk_elastix_stack_alignment():
                         help='Compute the information necessary for auto-padding and apply if requested')
     parser.add_argument('--determine_bounds', action='store_true',
                         help='Determine the bounds of each slice; Does not work with z_step > 1; Implicit for auto_pad')
-    parser.add_argument('--apply_final', action='store_true',
+    parser.add_argument('--materialize_output', '--apply_final',
+                        dest='materialize_output', action='store_true',
                         help='Apply the final transformation and create result ome-zarr')
     parser.add_argument('--no_preview', action='store_true',
                         help='No preview outputs are generated for the alignement steps')
@@ -315,7 +316,7 @@ def snk_elastix_stack_alignment():
     average_for_z_step = args.average_for_z_step
     auto_pad = args.auto_pad
     determine_bounds = args.determine_bounds
-    apply_final = args.apply_final
+    materialize_output = args.materialize_output
     no_preview = args.no_preview
     initialize_offsets_method = args.initialize_offsets_method
     initialize_offsets_kwargs = args.initialize_offsets_kwargs
@@ -401,7 +402,7 @@ def snk_elastix_stack_alignment():
         meta_dirpath=meta_dirpath,
         auto_pad=auto_pad,
         determine_bounds=determine_bounds,
-        apply_final=apply_final,
+        materialize_output=materialize_output,
         elastix_stack_alignment_workflow_params=dict(
             key=stack_key,
             pattern=stack_pattern,
