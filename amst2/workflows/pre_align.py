@@ -103,15 +103,13 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
 
     current_input = original_input
     transforms = []
-    for stage, filepath in stages:
+    for index, (stage, filepath) in enumerate(stages):
+        has_next_stage = index < len(stages) - 1
         if stage == 'initial':
             if not dryrun and not os.path.isfile(filepath):
                 raise FileNotFoundError(f'Initial transforms not found: {filepath}')
             transforms.append(filepath)
-            needs_intermediate_stack = any(
-                next_stage in ('sbs', 'nsbs') for next_stage, _ in stages
-            )
-            if needs_intermediate_stack:
+            if has_next_stage:
                 parameter_dict.setdefault('apply_initial_transforms', {})
                 run_apply_transformation(
                     parameter_dict, parameter_key='apply_initial_transforms',
@@ -124,15 +122,16 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
                 )
         else:
             key = f'{stage}_alignment'
-            parameter_dict.setdefault(key, {})['apply_final'] = True
+            parameter_dict.setdefault(key, {})['apply_final'] = has_next_stage
             if stage == 'nsbs':
                 parameter_dict[key]['stack_key'] = 's0' if current_input != original_input else parameter_dict['general'].get('stack_key', 's0')
             run_nsbs_alignment(parameter_dict, parameter_key=key,
                                input_dirpath=current_input, dryrun=dryrun, verbose=verbose)
             done = f'{key}/{key}.done'
             transforms.append(os.path.join(output_dirpath, key, f'{stage}.meta/elastix.json'))
-            current_input = os.path.join(output_dirpath, key, f'{stage}.ome.zarr')
-        if stage != 'initial' or needs_intermediate_stack:
+            if has_next_stage:
+                current_input = os.path.join(output_dirpath, key, f'{stage}.ome.zarr')
+        if stage != 'initial' or has_next_stage:
             if not dryrun and not os.path.exists(os.path.join(output_dirpath, done)):
                 return
 
