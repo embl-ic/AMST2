@@ -23,30 +23,6 @@ rule all:
         os.path.join(meta_dirpath, "amst.json")
 
 
-# TODO: to get this one right, we should actually combine the AMST with the pre-align transformations!
-rule apply_transformations:
-    input:
-        'create_ome_zarr_output',
-        'compute_auto_pad_output'
-    output:
-        'some_output_file'
-
-
-rule create_ome_zarr:
-    input:
-        'compute_auto_pad_output'
-    output:
-        'some_output_file'
-
-
-# This one could be directly computed in the amst rule
-rule compute_auto_pad:
-    input:
-        'amst_output'
-    output:
-        'some_output_file'
-
-
 rule finalize_amst_transforms:
     input:
         expand(os.path.join(this_cache_dirpath, "amst_{idx}.json"), idx=batch_ids)
