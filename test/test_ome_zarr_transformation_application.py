@@ -81,6 +81,34 @@ class TestOMEZarrTransformationApplication(unittest.TestCase):
             self.assertEqual(output.dataset(0).dtype, source.dtype)
             self.assertEqual(tuple(output.shape(0)), source.shape)
 
+    def test_known_translation_moves_pixels_in_output_to_input_direction(self):
+        print('Testing apply_transformation: known integer translation')
+        matrices = np.repeat(np.eye(3)[None, :, :], 9, axis=0)
+        matrices[:, 1, 2] = 3  # Positive column offset samples three pixels right.
+        with tempfile.TemporaryDirectory() as directory:
+            source, output = self._apply(Path(directory), 4, matrices)
+            expected = np.zeros_like(source)
+            expected[:, :, :-3] = source[:, :, 3:]
+            np.testing.assert_array_equal(output.dataset(0)[:], expected)
+
+    def test_slice_dependent_translations_cross_batch_boundaries(self):
+        print('Testing apply_transformation: slice-dependent shifts across batches')
+        matrices = np.repeat(np.eye(3)[None, :, :], 9, axis=0)
+        # Different shifts on both sides of the 4/8 slice batch boundaries.
+        shifts = [0, 1, 2, 3, 0, -1, -2, -3, 1]
+        matrices[:, 1, 2] = shifts
+        with tempfile.TemporaryDirectory() as directory:
+            source, output = self._apply(Path(directory), 4, matrices)
+            expected = np.zeros_like(source)
+            for z, shift in enumerate(shifts):
+                if shift > 0:
+                    expected[z, :, :-shift] = source[z, :, shift:]
+                elif shift < 0:
+                    expected[z, :, -shift:] = source[z, :, :shift]
+                else:
+                    expected[z] = source[z]
+            np.testing.assert_array_equal(output.dataset(0)[:], expected)
+
     def test_identity_results_independent_of_batch_size(self):
         print('Testing apply_transformation: batch size does not change pixels')
         matrices = np.repeat(np.eye(3)[None, :, :], 9, axis=0)
