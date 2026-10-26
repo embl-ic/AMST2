@@ -535,9 +535,9 @@ def snk_apply_transformation():
     for input_transforms_filepath in input_transforms_filepaths:
         if os.path.isdir(input_transforms_filepath):
             from squirrel.library.elastix import ElastixStack
-            this_stack = ElastixStack(dirpath=input_transforms_filepath)
-            if this_stack.image_shape() is not None:
-                shapes.append(this_stack.image_shape())
+            this_stack = ElastixStack.read(input_transforms_filepath)
+            if this_stack.image_shape is not None:
+                shapes.append(this_stack.image_shape)
         else:
             from squirrel.library.affine_matrices import AffineStack
             this_stack = AffineStack.read(input_transforms_filepath)

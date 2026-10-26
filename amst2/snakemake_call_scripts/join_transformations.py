@@ -8,9 +8,9 @@ if __name__ == '__main__':
 
     if run_info['transform'] in ['bspline', 'BSplineTransform']:
 
-        from squirrel.library.elastix import load_transform_stack_from_multiple_files
-        transforms = load_transform_stack_from_multiple_files(sn_input)
-        transforms.to_file(sn_output)
+        from squirrel.library.elastix import ElastixStack
+        transforms = ElastixStack.read_many(sn_input)
+        transforms.write(sn_output)
 
     elif run_info['transform'] in ['affine', 'AffineTransform']:
 

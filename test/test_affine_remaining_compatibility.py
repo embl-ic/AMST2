@@ -47,20 +47,24 @@ def test_join_affine_multiple_files_and_pivot(tmp_path):
                                [[1., 2.], [3., 3.], [2., 6.]])
 
 
-def test_bspline_branch_preserves_existing_loader(tmp_path, monkeypatch):
-    print('Testing workflow: B-spline join retains Elastix loader and writer ...')
-    from squirrel.library import elastix
+def test_bspline_branch_uses_elastix_stack_api(tmp_path, monkeypatch):
+    print('Testing workflow: B-spline join uses ElastixStack.read_many and write ...')
+    from squirrel.library.elastix import ElastixStack
     calls = []
+
     class Dummy:
-        def to_file(self, path):
+        def write(self, path):
             calls.append(('write', str(path)))
-    monkeypatch.setattr(elastix, 'load_transform_stack_from_multiple_files',
-                        lambda paths: (calls.append(('load', list(paths))), Dummy())[1])
+
+    def read_many(paths):
+        calls.append(('load', list(map(str, paths))))
+        return Dummy()
+
+    monkeypatch.setattr(ElastixStack, 'read_many', read_many)
     out = tmp_path / 'bspline'
-    _run('join_transformations.py', [tmp_path / 'part'], [out],
-         {'transform': 'bspline'})
-    assert calls[0][0] == 'load'
-    assert calls[1] == ('write', str(out))
+    part = tmp_path / 'part'
+    _run('join_transformations.py', [part], [out], {'transform': 'bspline'})
+    assert calls == [('load', [str(part)]), ('write', str(out))]
 
 
 def test_preview_scale_geometry_and_pivot():
