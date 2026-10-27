@@ -431,8 +431,8 @@ def snk_elastix_stack_alignment():
                 'create_ome_zarr',
                 'apply_final_transformations'
             ],
-            [16000, 8000, 1024, 8000],
-            [30, 5, 5, 30],
+            [16000, 1024, 8000],
+            [30, 5, 30],
             mem_args=mem,
             runtime_args=runtime
         )
