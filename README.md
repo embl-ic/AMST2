@@ -48,6 +48,7 @@ Additional references:
 
 - [Workflow configuration, stages, inputs, and outputs](docs/workflow_configuration.md)
 - [Common CLI options](docs/common_options.md)
+- [Example: Fiji SIFT alignment followed by AMST2 NSBS](docs/fiji_sift_alignment.md)
 
 ## Quick start
 

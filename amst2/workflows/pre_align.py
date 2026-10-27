@@ -292,6 +292,8 @@ def get_default_parameter_file():
                              '  Note: One Item consisting of group:parameter_name:value must not contain any spaces!\n'
                              '  Also note: You can generate any entry like this - also ones that have no effect!\n'
                              '  The idea of having this input argument is to make a workflow fully scriptable without the requirement for manually adjusting the parameter file.')
+    parser.add_argument('--fiji', metavar='AFFINE_JSON', type=str, default=None,
+                        help='Use an imported affine stack (e.g. from Fiji SIFT) instead of SBS, followed by NSBS')
     parser.add_argument('--slurm', action='store_true',
                         help='Creates the parameter file for a slurm cluster; Note that the compute settings may '
                              'require adjustment')
@@ -309,6 +311,13 @@ def get_default_parameter_file():
     param_output_dirpath = args.param_output_dirpath
     param_initialize_offset_method = args.param_initialize_offset_method
     params = args.params
+    if args.fiji is not None:
+        # A preset, not a separate execution mode. Explicit --params may override it.
+        params = [
+            f'workflow:pre_existing_transforms:{args.fiji}',
+            'workflow:run_sbs:false',
+            'workflow:run_nsbs:true',
+        ] + ([] if params is None else params)
     estimate_crop_xy = args.estimate_crop_xy
     slurm = args.slurm
 

@@ -25,6 +25,8 @@ The `workflow` section supports `run_sbs`, `run_nsbs` (both default to `true` wh
 
 The workflow writes `pre-align.json` and materializes the final image at `apply_pre_align/pre-align.ome.zarr` beneath `general.output_dirpath`. Intermediate volumes are materialized only when needed by subsequent stages. The `.amst2/run-identity.json` manifest detects changes to effective configuration and imported transforms; use a fresh output directory when those change.
 
+For a worked example that imports Fiji SIFT transformations, skips SBS, and runs NSBS, see [Fiji SIFT alignment](fiji_sift_alignment.md).
+
 The runner supports `--dryrun` and `--verbose`. The generator supports `-p`/`--params` overrides; run its `--help` for exact syntax and other generator options.
 
 ## AMST
