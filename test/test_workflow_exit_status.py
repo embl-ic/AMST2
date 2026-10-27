@@ -63,3 +63,21 @@ def test_failure_after_full_progress(monkeypatch):
     log = ('9 of 9 steps (100%) done\n'
            'WorkflowError:\nAt least one job did not complete successfully.\n')
     assert _run_with_stderr(monkeypatch, log, 0) == 1
+
+
+def test_failure_rule_exception_with_zero_exit(monkeypatch, capsys):
+    print('Testing rule exception is reported even when wrapper exits zero')
+    assert _run_with_stderr(monkeypatch, 'RuleException:\nError in rule apply_final_transformations:\n', 0) == 1
+    assert 'Snakemake reported a job failure' in capsys.readouterr().out
+
+
+def test_nonzero_exit_reports_status(monkeypatch, capsys):
+    print('Testing nonzero exit status is reported accurately')
+    assert _run_with_stderr(monkeypatch, '', 17) == 1
+    assert 'command exited with status 17' in capsys.readouterr().out
+
+
+def test_zero_without_completion_reports_missing_marker(monkeypatch, capsys):
+    print('Testing missing completion marker has distinct failure message')
+    assert _run_with_stderr(monkeypatch, 'Submitted job 42\n', 0) == 1
+    assert 'without a Snakemake completion marker' in capsys.readouterr().out

@@ -91,6 +91,8 @@ def run_snakemake_workflow(run_script, wf_name):
         "Exiting because a job execution failed",
         "At least one job did not complete successfully",
         "WorkflowError:",
+        "Error in rule ",
+        "RuleException:",
     ))
     if process.returncode == 0 and not failed and (completed or nothing_to_do):
         print(
@@ -107,7 +109,13 @@ def run_snakemake_workflow(run_script, wf_name):
 
     print(f'\n\n{stderr_text}')
     print("_____________________________________________\n")
-    print(f"{wf_name} failed (exit code {process.returncode}; no valid Snakemake completion or failure detected).")
+    if failed:
+        reason = "Snakemake reported a job failure"
+    elif process.returncode != 0:
+        reason = f"command exited with status {process.returncode}"
+    else:
+        reason = "command returned zero without a Snakemake completion marker"
+    print(f"{wf_name} failed: {reason}.")
     print("_____________________________________________\n")
     return 1
 
