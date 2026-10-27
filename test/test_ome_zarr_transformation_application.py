@@ -14,7 +14,7 @@ class TestOMEZarrTransformationApplication(unittest.TestCase):
         warnings.simplefilter('ignore', category=Warning)
 
     @staticmethod
-    def _apply(root, batch_size, matrices):
+    def _apply(root, batch_size, matrices, additional_matrices=None):
         from squirrel.library.affine_matrices import AffineStack
         from squirrel.library.ome_zarr import OMEZarrStore
 
@@ -28,7 +28,7 @@ class TestOMEZarrTransformationApplication(unittest.TestCase):
         store = OMEZarrStore.create(
             str(input_path), shape=data.shape, dtype=data.dtype,
             chunks=(1, 16, 16), shards=None,
-            downsample_factors=((1, 2, 2),),
+            downsample_factors=((2, 2, 2),),
             resolution=(2.0, 0.5, 0.25), unit='micrometer',
             ome_version='0.4', zarr_format=2)
         store.write(0, (0, 0, 0), data, update_pyramid=True)
@@ -44,10 +44,18 @@ class TestOMEZarrTransformationApplication(unittest.TestCase):
             matrices, sequenced=True,
             metadata={'stack_shape': list(data.shape)}).write(str(transforms_path))
 
+        transform_paths = [str(transforms_path)]
+        if additional_matrices is not None:
+            additional_path = root / 'additional_transforms.json'
+            AffineStack.from_array(
+                additional_matrices, sequenced=True,
+                metadata={'stack_shape': list(data.shape)}).write(str(additional_path))
+            transform_paths.append(str(additional_path))
+
         output_dir = root / 'output'
         # Use the installed AMST2 entry point, which runs the real Snakemake workflow.
         command = [
-            'amst2-apply_transformation', str(input_path), str(transforms_path),
+            'amst2-apply_transformation', str(input_path), *transform_paths,
             str(output_dir), '--stack_key', 's0', '--batch_size', str(batch_size),
             '--cores', '1', '--max_cores_per_task', '1',
             '--chunk_size', '1', '16', '16',
@@ -108,6 +116,40 @@ class TestOMEZarrTransformationApplication(unittest.TestCase):
                 else:
                     expected[z] = source[z]
             np.testing.assert_array_equal(output.dataset(0)[:], expected)
+
+    def test_two_transform_stacks_compose_in_application(self):
+        print('Testing apply_transformation: two successive integer translations')
+        first = np.repeat(np.eye(3)[None, :, :], 9, axis=0)
+        second = np.repeat(np.eye(3)[None, :, :], 9, axis=0)
+        first[:, 1, 2] = 2
+        second[:, 1, 2] = -1
+        with tempfile.TemporaryDirectory() as directory:
+            source, output = self._apply(Path(directory), 4, first, second)
+            expected = np.zeros_like(source)
+            # Two pure translations compose to an output-to-input shift of +1.
+            expected[:, :, :-1] = source[:, :, 1:]
+            np.testing.assert_array_equal(output.dataset(0)[:], expected)
+
+    def test_ome_zarr_multiscale_metadata_and_pixels(self):
+        print('Testing apply_transformation: OME-Zarr metadata and pyramid')
+        from squirrel.library.ome_zarr import OMEZarrStore
+
+        matrices = np.repeat(np.eye(3)[None, :, :], 9, axis=0)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, output = self._apply(root, 4, matrices)
+            input_store = OMEZarrStore(str(root / 'input.ome.zarr'), mode='r')
+            self.assertEqual(tuple(output.shape(0)), source.shape)
+            self.assertEqual(output.dataset(0).dtype, source.dtype)
+            self.assertEqual(output.metadata.units, input_store.metadata.units)
+            self.assertEqual(tuple(output.metadata.scale(0)),
+                             tuple(input_store.metadata.scale(0)))
+            self.assertEqual(tuple(output.shape(1)), tuple(input_store.shape(1)))
+            self.assertEqual(tuple(output.metadata.scale(1)),
+                             tuple(input_store.metadata.scale(1)))
+            np.testing.assert_array_equal(output.dataset(0)[:], source)
+            np.testing.assert_array_equal(output.dataset(1)[:],
+                                          input_store.dataset(1)[:])
 
     def test_identity_results_independent_of_batch_size(self):
         print('Testing apply_transformation: batch size does not change pixels')
