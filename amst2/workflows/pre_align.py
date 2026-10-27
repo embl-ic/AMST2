@@ -78,6 +78,49 @@ def _check_run_identity(parameter_dict, stages, output_dirpath):
             json.dump(identity, handle, indent=2)
 
 
+
+def _validate_imported_affine_stack(filepath, input_dirpath, stack_key='s0', stack_pattern='*.tif'):
+    """Validate an imported 2D affine stack against the original image volume."""
+    import numpy as np
+
+    from squirrel.library.affine_matrices import AffineStack
+    from squirrel.library.io import load_data_handle
+
+    if not os.path.isfile(filepath):
+        raise FileNotFoundError(f'Initial transforms not found: {filepath}')
+
+    try:
+        transforms = AffineStack.read(filepath)
+    except (KeyError, TypeError, ValueError, OSError) as error:
+        raise ValueError(f'Cannot read initial affine transforms {filepath}: {error}') from error
+
+    _, input_shape = load_data_handle(input_dirpath, key=stack_key, pattern=stack_pattern)
+    input_shape = tuple(int(value) for value in input_shape)
+    if len(input_shape) != 3:
+        raise ValueError(f'Expected a 3D input volume, got shape {input_shape}')
+    if len(transforms) != input_shape[0]:
+        raise ValueError(
+            f'Initial affine stack contains {len(transforms)} transforms, '
+            f'but input volume contains {input_shape[0]} slices'
+        )
+
+    matrices = np.asarray(transforms.as_homogeneous())
+    if matrices.shape != (input_shape[0], 3, 3):
+        raise ValueError(f'Expected 2D homogeneous affine matrices, got {matrices.shape}')
+    if not np.isfinite(matrices).all():
+        raise ValueError('Initial affine stack contains non-finite matrix coefficients')
+
+    if transforms.has_metadata('stack_shape'):
+        recorded_shape = transforms.get_metadata('stack_shape')
+        if recorded_shape is not None and tuple(recorded_shape) != input_shape:
+            raise ValueError(
+                f'Initial affine stack shape metadata {recorded_shape} '
+                f'does not match input shape {input_shape}'
+            )
+
+    return transforms
+
+
 def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
 
     from .lib import load_parameter_yaml
@@ -90,6 +133,13 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
     original_input = parameter_dict['general']['input_dirpath']
 
     if not dryrun:
+        for stage, filepath in stages:
+            if stage == 'initial':
+                _validate_imported_affine_stack(
+                    filepath, original_input,
+                    stack_key=parameter_dict['general'].get('stack_key', 's0'),
+                    stack_pattern=parameter_dict['general'].get('stack_pattern', '*.tif')
+                )
         os.makedirs(output_dirpath, exist_ok=True)
         _check_run_identity(parameter_dict, stages, output_dirpath)
 
