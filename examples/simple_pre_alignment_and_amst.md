@@ -18,10 +18,8 @@ If this is the case, the following commands should be available and yield their 
 ```
 amst2-wf-nsbs_pre_align_get_default_parameter_file -h
 amst2-wf-nsbs_pre_align-run -h
-amst2-wf-nsbs_pre_align-cleanup -h
 amst2-wf-amst-get_default_parameter_file -h
 amst2-wf-amst-run -h
-amst2-wf-amst-cleanup -h
 ```
 
 ## Pre-alignment (Steps 1 to 4)
@@ -106,16 +104,3 @@ amst2-wf-amst-run params_amst.yaml
 Now you can check the result:
  1. If activated, full size tif-stack in ```hela-1-amst/amst_to_tif_stack/amst/```
  2. ome.zarr in ```hela-1-amst/apply_amst/amst.ome.zarr```
-
-## Clean-up of intermediate results
-
-To simplify the output folder structure as well as remove intermediate steps, run the following commands for 
-pre-alignment and AMST individually:
-
-```
-amst2-wf-nsbs_pre_align-cleanup pre-align-out-dir/params_pre_align.yaml
-amst2-wf-amst_cleanup amst-out-dir/params_amst.yaml
-```
-
-Note that the directory structure changes such that re-running the AMST step would require adjusting the input 
-file/directory locations.

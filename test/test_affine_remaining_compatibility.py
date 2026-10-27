@@ -1,0 +1,77 @@
+"""Regression tests for AMST2's remaining squirrel 0.5.5 affine call scripts."""
+import runpy
+from pathlib import Path
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+from squirrel.library.affine_matrices import AffineStack
+
+SCRIPTS = Path(__file__).resolve().parents[1] / "amst2" / "snakemake_call_scripts"
+
+
+def _stack(path, translations, *, sequenced=False, metadata=None, pivot=(5., 7.)):
+    matrices = np.repeat(np.eye(3)[None], len(translations), axis=0)
+    matrices[:, :2, 2] = translations
+    AffineStack.from_array(matrices, pivot=pivot, sequenced=sequenced,
+                           metadata=metadata).write(path)
+
+
+def _run(script, inputs, outputs, run_info, **params):
+    import builtins
+    old = getattr(builtins, "snakemake", None)
+    builtins.snakemake = SimpleNamespace(
+        input=list(map(str, inputs)), output=list(map(str, outputs)),
+        params={"run_info": run_info, **params}, threads=1)
+    try:
+        runpy.run_path(str(SCRIPTS / script), run_name="__main__")
+    finally:
+        if old is None:
+            del builtins.snakemake
+        else:
+            builtins.snakemake = old
+
+
+def test_join_affine_multiple_files_and_pivot(tmp_path):
+    print('Testing workflow: join affine files and preserve sequencing and pivot ...')
+    a, b, out = (tmp_path / name for name in ('a.json', 'b.json', 'joined.json'))
+    _stack(a, [[1., 2.], [2., 1.]])
+    if not np.allclose(AffineStack.read(a).pivot, [5., 7.]):
+        pytest.skip("Requires squirrel Patch A.2 pivot serialization")
+    _stack(b, [[-1., 3.]])
+    _run('join_transformations.py', [a, b], [out], {'transform': 'affine'})
+    result = AffineStack.read(out)
+    assert result.sequenced
+    np.testing.assert_allclose(result.pivot, [5., 7.])
+    np.testing.assert_allclose(result.as_array()[:, :2, 2],
+                               [[1., 2.], [3., 3.], [2., 6.]])
+
+
+def test_bspline_branch_uses_elastix_stack_api(tmp_path, monkeypatch):
+    print('Testing workflow: B-spline join uses ElastixStack.read_many and write ...')
+    from squirrel.library.elastix import ElastixStack
+    calls = []
+
+    class Dummy:
+        def write(self, path):
+            calls.append(('write', str(path)))
+
+    def read_many(paths):
+        calls.append(('load', list(map(str, paths))))
+        return Dummy()
+
+    monkeypatch.setattr(ElastixStack, 'read_many', read_many)
+    out = tmp_path / 'bspline'
+    part = tmp_path / 'part'
+    _run('join_transformations.py', [part], [out], {'transform': 'bspline'})
+    assert calls == [('load', [str(part)]), ('write', str(out))]
+
+
+def test_preview_scale_geometry_and_pivot():
+    print('Testing workflow: preview scaling preserves expected Z length and pivot ...')
+    stack = AffineStack.identity(8, ndim=2, pivot=[5., 7.], sequenced=True,
+                                 metadata={'stack_shape': [8, 32, 32]})
+    scaled = stack.scaled_for_stack_resize(0.5)
+    assert len(scaled) == 4
+    np.testing.assert_allclose(scaled.pivot, [2.5, 3.5])
+    assert scaled.sequenced

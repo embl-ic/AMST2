@@ -1,5 +1,6 @@
 
 import os
+import numpy as np
 
 
 def snk_stack_to_ome_zarr():
@@ -196,19 +197,21 @@ def snk_ome_zarr_to_stack():
 
     # Generate run.json ----------------------------------
 
-    from squirrel.library.ome_zarr import get_ome_zarr_handle
-    data_h = get_ome_zarr_handle(ome_zarr_filepath, key=ome_zarr_key, mode='r')
-    batch_ids = [x for x in range(0, data_h.shape[0], args.batch_size)]
+    from squirrel.library.ome_zarr import OMEZarrStore
+    store = OMEZarrStore(ome_zarr_filepath, mode='r')
+    dtype = np.dtype(store.dtype(0)).name
+    shape = store.shape(0)
+
+    batch_ids = [x for x in range(0, shape[0], args.batch_size)]
 
     src_dirpath = os.path.dirname(os.path.realpath(__file__))
-    dtype = str(data_h[0].dtype)
 
     run_info = dict(
         ome_zarr_filepath=ome_zarr_filepath,
         ome_zarr_key=ome_zarr_key,
         target_dirpath=target_dirpath,
         batch_ids=batch_ids,
-        stack_shape=data_h.shape,
+        stack_shape=shape,
         src_dirpath=src_dirpath,
         dtype=dtype,
         cache_dirpath=cache_dirpath,

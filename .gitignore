@@ -240,3 +240,6 @@ fabric.properties
 .snakemake
 
 .idea
+
+.vscode
+settings.json

@@ -1,144 +1,232 @@
+import hashlib
+import json
 import os
 
 
-def _run_nsbs_pre_align(parameter_yaml, dryrun=False, verbose=False):
+def _alignment_stages(parameter_dict):
+    """Return enabled stages in their execution order."""
+    workflow = parameter_dict.get('workflow', {})
+    initial = workflow.get('pre_existing_transforms')
+    stages = []
+    if initial:
+        stages.append(('initial', initial))
+    if workflow.get('run_sbs', True):
+        stages.append(('sbs', None))
+    if workflow.get('run_nsbs', True):
+        stages.append(('nsbs', None))
+    if not stages:
+        raise ValueError('Enable at least one of initial transforms, SBS, or NSBS')
+    return stages
+
+
+
+def _compose_stage_transforms(transform_filepaths, output_filepath, verbose=False):
+    """Compose stage transforms in execution order into one affine stack.
+
+    Transforms are output-to-input mappings for image resampling.
+    For stages A then B, source coordinates are A(B(output)), so
+    the combined mapping is A @ B.
+    """
+    import shutil
+    import tempfile
+
+    if not transform_filepaths:
+        raise ValueError('At least one transformation stack is required')
+
+    if len(transform_filepaths) == 1:
+        if os.path.abspath(transform_filepaths[0]) != os.path.abspath(output_filepath):
+            shutil.copyfile(transform_filepaths[0], output_filepath)
+        return output_filepath
+
+    from squirrel.workflows.transformation import dot_product_on_affines_workflow
+
+    # Keep partial compositions temporary; only the requested output persists.
+    with tempfile.TemporaryDirectory() as directory:
+        previous = transform_filepaths[0]
+        for index, next_filepath in enumerate(transform_filepaths[1:], start=1):
+            target = (output_filepath if index == len(transform_filepaths) - 1
+                      else os.path.join(directory, f'combined-{index}.json'))
+            dot_product_on_affines_workflow(
+                [previous, next_filepath], target, keep_meta=0, verbose=verbose
+            )
+            previous = target
+
+    return output_filepath
+
+
+def _check_run_identity(parameter_dict, stages, output_dirpath):
+    """Reject reuse of a completed run with different effective inputs."""
+    manifest_dirpath = os.path.join(output_dirpath, '.amst2')
+    manifest = os.path.join(manifest_dirpath, 'run-identity.json')
+    configuration = json.dumps(parameter_dict, sort_keys=True, default=str)
+    external = {}
+    for stage, filepath in stages:
+        if stage == 'initial':
+            with open(filepath, 'rb') as handle:
+                external[os.path.abspath(filepath)] = hashlib.sha256(handle.read()).hexdigest()
+    identity = {'configuration': hashlib.sha256(configuration.encode()).hexdigest(),
+                'external_transforms': external}
+    if os.path.isfile(manifest):
+        with open(manifest) as handle:
+            if json.load(handle) != identity:
+                raise RuntimeError('Pre-align inputs or parameters changed. Use a fresh output directory.')
+    elif any(os.scandir(output_dirpath)):
+        raise RuntimeError('Pre-align output directory contains untracked results. Use a fresh directory.')
+    else:
+        os.makedirs(manifest_dirpath, exist_ok=True)
+        with open(manifest, 'w') as handle:
+            json.dump(identity, handle, indent=2)
+
+
+
+def _validate_imported_affine_stack(filepath, input_dirpath, stack_key='s0', stack_pattern='*.tif'):
+    """Validate an imported 2D affine stack against the original image volume."""
+    import numpy as np
+
+    from squirrel.library.affine_matrices import AffineStack
+    from squirrel.library.io import load_data_handle
+
+    if not os.path.isfile(filepath):
+        raise FileNotFoundError(f'Initial transforms not found: {filepath}')
+
+    try:
+        transforms = AffineStack.read(filepath)
+    except (KeyError, TypeError, ValueError, OSError) as error:
+        raise ValueError(f'Cannot read initial affine transforms {filepath}: {error}') from error
+
+    _, input_shape = load_data_handle(input_dirpath, key=stack_key, pattern=stack_pattern)
+    input_shape = tuple(int(value) for value in input_shape)
+    if len(input_shape) != 3:
+        raise ValueError(f'Expected a 3D input volume, got shape {input_shape}')
+    if len(transforms) != input_shape[0]:
+        raise ValueError(
+            f'Initial affine stack contains {len(transforms)} transforms, '
+            f'but input volume contains {input_shape[0]} slices'
+        )
+
+    matrices = np.asarray(transforms.as_homogeneous())
+    if matrices.shape != (input_shape[0], 3, 3):
+        raise ValueError(f'Expected 2D homogeneous affine matrices, got {matrices.shape}')
+    if not np.isfinite(matrices).all():
+        raise ValueError('Initial affine stack contains non-finite matrix coefficients')
+
+    if transforms.has_metadata('stack_shape'):
+        recorded_shape = transforms.get_metadata('stack_shape')
+        if recorded_shape is not None and tuple(recorded_shape) != input_shape:
+            raise ValueError(
+                f'Initial affine stack shape metadata {recorded_shape} '
+                f'does not match input shape {input_shape}'
+            )
+
+    return transforms
+
+
+def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
 
     from .lib import load_parameter_yaml
+    from .lib import run_apply_transformation
+    from .lib import run_nsbs_alignment
+
     parameter_dict = load_parameter_yaml(parameter_yaml)
-    if verbose:
-        print(f'parameter_dict = {parameter_dict}')
-
+    stages = _alignment_stages(parameter_dict)
     output_dirpath = parameter_dict['general']['output_dirpath']
+    original_input = parameter_dict['general']['input_dirpath']
 
-    if not dryrun and not os.path.exists(output_dirpath):
+    if not dryrun:
+        for stage, filepath in stages:
+            if stage == 'initial':
+                _validate_imported_affine_stack(
+                    filepath, original_input,
+                    stack_key=parameter_dict['general'].get('stack_key', 's0'),
+                    stack_pattern=parameter_dict['general'].get('stack_pattern', '*.tif')
+                )
         os.makedirs(output_dirpath, exist_ok=True)
+        _check_run_identity(parameter_dict, stages, output_dirpath)
 
-    if 'stack_to_ome_zarr' in parameter_dict and parameter_dict['stack_to_ome_zarr']['active']:
+    if parameter_dict.get('stack_to_ome_zarr', {}).get('active', False):
         from .lib import run_stack_to_ome_zarr
-        run_stack_to_ome_zarr(parameter_dict, parameter_key='stack_to_ome_zarr', dryrun=dryrun, verbose=verbose)
-        input_dirpath = os.path.join(output_dirpath, 'stack_to_ome_zarr/input-raw.ome.zarr')
-        if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'stack_to_ome_zarr', 'stack_to_ome_zarr.done')):
+        run_stack_to_ome_zarr(parameter_dict, parameter_key='stack_to_ome_zarr',
+                              dryrun=dryrun, verbose=verbose)
+        original_input = os.path.join(output_dirpath, 'stack_to_ome_zarr/input-raw.ome.zarr')
+        if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'stack_to_ome_zarr/stack_to_ome_zarr.done')):
             return
         parameter_dict['general']['stack_key'] = 's0'
-    else:
-        input_dirpath = None
 
-    from .lib import run_nsbs_alignment
-    parameter_dict['sbs_alignment']['apply_final'] = True
-    run_nsbs_alignment(
-        parameter_dict, parameter_key='sbs_alignment',
-        input_dirpath=input_dirpath,
-        dryrun=dryrun,
-        verbose=verbose
-    )
-
-    if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'sbs_alignment', 'sbs_alignment.done')):
-        return
-
-    parameter_dict['nsbs_alignment']['stack_key'] = 's0'
-    from .lib import run_nsbs_alignment
-    run_nsbs_alignment(
-        parameter_dict, parameter_key='nsbs_alignment',
-        input_dirpath=os.path.join(output_dirpath, 'sbs_alignment/sbs.ome.zarr'),
-        dryrun=dryrun,
-        verbose=verbose
-    )
-
-    if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'nsbs_alignment', 'nsbs_alignment.done')):
-        return
-    
-    if not dryrun:
-
-        from squirrel.workflows.transformation import dot_product_on_affines_workflow
-        dot_product_on_affines_workflow(
-            [
-                os.path.join(output_dirpath, 'sbs_alignment/sbs.meta/elastix.json'),
-                os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/elastix.json')
-            ],
-            os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/combined.json'),
-            keep_meta=0,
-            verbose=verbose
-        )
-        if not os.path.exists(os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/combined.json')):
-            return
-        
-        if parameter_dict['general']['auto_pad']:
-            from squirrel.workflows.transformation import apply_auto_pad_workflow
-            apply_auto_pad_workflow(
-                os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/combined.json'),
-                os.path.join(output_dirpath, 'nsbs-pre-align.json'),
-                verbose=verbose
-            )
+    current_input = original_input
+    transforms = []
+    for index, (stage, filepath) in enumerate(stages):
+        has_next_stage = index < len(stages) - 1
+        if stage == 'initial':
+            if not dryrun and not os.path.isfile(filepath):
+                raise FileNotFoundError(f'Initial transforms not found: {filepath}')
+            transforms.append(filepath)
+            if has_next_stage:
+                parameter_dict.setdefault('apply_initial_transforms', {})
+                run_apply_transformation(
+                    parameter_dict, parameter_key='apply_initial_transforms',
+                    transforms_filepath=filepath, input_dirpath=current_input,
+                    output_filename='initial.ome.zarr', dryrun=dryrun, verbose=verbose
+                )
+                done = 'apply_initial_transforms/apply_initial_transforms.done'
+                current_input = os.path.join(
+                    output_dirpath, 'apply_initial_transforms/initial.ome.zarr'
+                )
         else:
-            import shutil
-            shutil.copy(
-                os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/combined.json'),
-                os.path.join(output_dirpath, 'nsbs-pre-align.json')
-            )   
+            key = f'{stage}_alignment'
+            parameter_dict.setdefault(key, {})['materialize_output'] = has_next_stage
+            if stage == 'nsbs':
+                parameter_dict[key]['stack_key'] = 's0' if current_input != original_input else parameter_dict['general'].get('stack_key', 's0')
+            run_nsbs_alignment(parameter_dict, parameter_key=key,
+                               input_dirpath=current_input, dryrun=dryrun, verbose=verbose)
+            done = f'{key}/{key}.done'
+            transforms.append(os.path.join(output_dirpath, key, 'elastix.json'))
+            if has_next_stage:
+                current_input = os.path.join(output_dirpath, key, f'{stage}.ome.zarr')
+        if stage != 'initial' or has_next_stage:
+            if not dryrun and not os.path.exists(os.path.join(output_dirpath, done)):
+                return
 
+    final_filepath = os.path.join(output_dirpath, 'pre-align.json')
+    auto_pad = parameter_dict['general'].get('auto_pad', False)
+    if dryrun:
+        print(f'Compose transforms in order: {transforms} -> {final_filepath}')
+        if auto_pad:
+            print(f'Apply auto-padding to final transforms: {final_filepath}')
+    elif auto_pad:
+        import tempfile
+
+        from squirrel.workflows.transformation import apply_auto_pad_workflow
+
+        with tempfile.TemporaryDirectory() as directory:
+            combined_filepath = os.path.join(directory, 'combined.json')
+            _compose_stage_transforms(transforms, combined_filepath, verbose=verbose)
+            apply_auto_pad_workflow(combined_filepath, final_filepath,
+                                    image_stack_path=original_input,
+                                    key=parameter_dict['general'].get('stack_key', 's0'),
+                                    pattern=parameter_dict['general'].get('stack_pattern', '*.tif'),
+                                    verbose=verbose)
     else:
-        print(
-            '\nRunning in python:\n'
-            '```\n'
-            'from squirrel.workflows.transformation import dot_product_on_affines_workflow\n'
-            '    dot_product_on_affines_workflow(\n'
-            '        [\n'
-            "            os.path.join(output_dirpath, 'sbs_alignment/sbs.meta/elastix.json'),\n"
-            "            os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/elastix.json')\n"
-            '        ],\n'
-            "        os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/combined.json'),\n"
-            '        keep_meta=0,\n'
-            '        verbose=verbose\n'
-            ')\n\n'
-            "if parameter_dict['general']['auto_pad']:\n"
-            "    from squirrel.workflows.transformation import apply_auto_pad_workflow\n"
-            "    apply_auto_pad_workflow(\n"
-            "        os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/combined.json'),\n"
-            "        os.path.join(output_dirpath, 'nsbs-pre-align.json'),\n"
-            "        verbose=verbose\n"
-            "    )\n"
-            "else:\n"
-            "    import shutil\n"
-            "    shutil.copy(\n"
-            "        os.path.join(output_dirpath, 'nsbs_alignment/nsbs.meta/combined.json'),\n"
-            "        os.path.join(output_dirpath, 'nsbs-pre-align.json')\n"
-            "    )               \n"
-            '```'
-        )
+        _compose_stage_transforms(transforms, final_filepath, verbose=verbose)
 
-    if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'nsbs-pre-align.json')):
-        return
-
-    from .lib import run_apply_transformation
     run_apply_transformation(
-        parameter_dict,
-        parameter_key='apply_pre_align',
-        transforms_filepath=os.path.join(output_dirpath, 'nsbs-pre-align.json'),
-        input_dirpath=input_dirpath,
-        output_filename='nsbs-pre-align.ome.zarr',
-        dryrun=dryrun,
-        verbose=verbose
+        parameter_dict, parameter_key='apply_pre_align',
+        transforms_filepath=final_filepath, input_dirpath=original_input,
+        output_filename='pre-align.ome.zarr', dryrun=dryrun, verbose=verbose
     )
-
-    if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'apply_pre_align', 'apply_pre_align.done')):
+    if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'apply_pre_align/apply_pre_align.done')):
         return
 
-    if 'pre_align_to_tif_stack' in parameter_dict and parameter_dict['pre_align_to_tif_stack']['active']:
+    if parameter_dict.get('pre_align_to_tif_stack', {}).get('active', False):
         from .lib import run_ome_zarr_to_stack
         run_ome_zarr_to_stack(
-            parameter_dict,
-            parameter_key='pre_align_to_tif_stack',
-            input_dirpath=os.path.join(output_dirpath, 'apply_pre_align/nsbs-pre-align.ome.zarr'),
-            output_dirname='nsbs-pre-align',
-            dryrun=dryrun,
-            verbose=verbose
+            parameter_dict, parameter_key='pre_align_to_tif_stack',
+            input_dirpath=os.path.join(output_dirpath, 'apply_pre_align/pre-align.ome.zarr'),
+            output_dirname='pre-align', dryrun=dryrun, verbose=verbose
         )
 
-    if dryrun:
-        print('')
 
 
-def nsbs_pre_align():
+def pre_align():
 
     # Argument parsing -----------------------------------
 
@@ -150,7 +238,7 @@ def nsbs_pre_align():
     )
 
     parser.add_argument('parameter_yaml', type=str,
-                        help='Parameter file. Run `amst2-wf-nsbs_pre_align-get_default_parameter_file` to generate it.')
+                        help='Parameter file. Run `amst2-wf-pre_align-get_default_parameter_file` to generate it.')
     parser.add_argument('-d', '--dryrun', action='store_true',
                         help='Dry-run: Displays the amst2 commands that would be run.')
     parser.add_argument('-v', '--verbose', action='store_true')
@@ -165,85 +253,7 @@ def nsbs_pre_align():
         print(f'parameter_yaml = {parameter_yaml}')
         print(f'dryrun = {dryrun}')
 
-    _run_nsbs_pre_align(parameter_yaml, dryrun=dryrun, verbose=verbose)
-
-
-def _run_cleanup_nsbs_pre_align(parameter_yaml, verbose=False, dryrun=False):
-
-    import shutil
-    from glob import glob
-
-    from .lib import load_parameter_yaml
-    parameter_dict = load_parameter_yaml(parameter_yaml)
-
-    output_dirpath = parameter_dict['general']['output_dirpath']
-
-    # rm -r */snk_cache
-    def remove_snk_caches(project_dir):
-        dirpaths = glob(os.path.join(project_dir, '*', 'snk_cache'))
-        for dirpath in dirpaths:
-            print(f'rm -r {dirpath}')
-            if not dryrun:
-                shutil.rmtree(dirpath)
-    remove_snk_caches(output_dirpath)
-
-    # rm */*.done
-    def remove_done_files(project_dir):
-        files = glob(os.path.join(project_dir, '*', '*.done'))
-        for file in files:
-            print(f'rm {file}')
-            if not dryrun:
-                os.remove(file)
-    remove_done_files(output_dirpath)
-
-    # # mv apply_pre_align/nsbs-pre-align.ome.zarr/ .
-
-    # print('rmdir apply_pre_align')
-    # if not dryrun:
-    #     os.rmdir(os.path.join(output_dirpath, 'apply_pre_align'))
-
-    print('rm -r nsbs_alignment')
-    if not dryrun:
-        shutil.rmtree(os.path.join(output_dirpath, 'nsbs_alignment'))
-
-    print('rm -r sbs_alignment')
-    if not dryrun:
-        shutil.rmtree(os.path.join(output_dirpath, 'sbs_alignment'))
-
-    print('mv pre_align_to_tif_stack/nsbs-pre-align/ .')
-    if not dryrun:
-        shutil.move(os.path.join(output_dirpath, 'pre_align_to_tif_stack', 'nsbs-pre-align'), output_dirpath)
-
-    print('rmdir pre_align_to_tif_stack')
-    if not dryrun:
-        os.rmdir(os.path.join(output_dirpath, 'pre_align_to_tif_stack'))
-
-
-def cleanup_nsbs_pre_align():
-
-    # Argument parsing -----------------------------------
-
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description='Cleans up a pre-alignment with nth-slice-by-slice alignment for long-range registration',
-        formatter_class=argparse.RawTextHelpFormatter
-    )
-
-    parser.add_argument('parameter_yaml', type=str)
-    parser.add_argument('-v', '--verbose', action='store_true')
-    parser.add_argument('-d', '--dryrun', action='store_true')
-
-    args = parser.parse_args()
-
-    parameter_yaml = args.parameter_yaml
-    verbose = args.verbose
-    dryrun = args.dryrun
-
-    if verbose:
-        print(f'parameter_yaml = {parameter_yaml}')
-
-    _run_cleanup_nsbs_pre_align(parameter_yaml, verbose=verbose, dryrun=dryrun)
+    _run_pre_align(parameter_yaml, dryrun=dryrun, verbose=verbose)
 
 
 def get_default_parameter_file():
@@ -282,6 +292,8 @@ def get_default_parameter_file():
                              '  Note: One Item consisting of group:parameter_name:value must not contain any spaces!\n'
                              '  Also note: You can generate any entry like this - also ones that have no effect!\n'
                              '  The idea of having this input argument is to make a workflow fully scriptable without the requirement for manually adjusting the parameter file.')
+    parser.add_argument('--fiji', metavar='AFFINE_JSON', type=str, default=None,
+                        help='Use an imported affine stack (e.g. from Fiji SIFT) instead of SBS, followed by NSBS')
     parser.add_argument('--slurm', action='store_true',
                         help='Creates the parameter file for a slurm cluster; Note that the compute settings may '
                              'require adjustment')
@@ -299,6 +311,13 @@ def get_default_parameter_file():
     param_output_dirpath = args.param_output_dirpath
     param_initialize_offset_method = args.param_initialize_offset_method
     params = args.params
+    if args.fiji is not None:
+        # A preset, not a separate execution mode. Explicit --params may override it.
+        params = [
+            f'workflow:pre_existing_transforms:{args.fiji}',
+            'workflow:run_sbs:false',
+            'workflow:run_nsbs:true',
+        ] + ([] if params is None else params)
     estimate_crop_xy = args.estimate_crop_xy
     slurm = args.slurm
 

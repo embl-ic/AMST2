@@ -1,7 +1,5 @@
 
 # TODO: This might be integratable into the amst_bspline.snk (going back to a generic amst.snk)
-#   The create preview rule is not that important, this is meant for fine-tuning which might not even be visible on a
-#   lower resolution
 
 import os
 import json
@@ -13,7 +11,6 @@ with open('run.json', mode='r') as f:
 
 this_cache_dirpath = run_info['this_cache_dirpath']
 batch_ids = run_info['batch_ids']
-preview = not run_info['no_previews']
 src_dirpath = run_info['src_dirpath']
 meta_dirpath = run_info['meta_dirpath']
 transform = run_info['transform']
@@ -23,46 +20,20 @@ print(f'run_info = {run_info}')
 
 rule all:
     input:
-        os.path.join(meta_dirpath, "amst_preview.h5")
+        os.path.join(meta_dirpath, "amst.json")
 
 
-# TODO: to get this one right, we should actually combine the AMST with the pre-align transformations!
-rule apply_transformations:
-    input:
-        'create_ome_zarr_output',
-        'compute_auto_pad_output'
-    output:
-        'some_output_file'
-
-
-rule create_ome_zarr:
-    input:
-        'compute_auto_pad_output'
-    output:
-        'some_output_file'
-
-
-# This one could be directly computed in the amst rule
-rule compute_auto_pad:
-    input:
-        'amst_output'
-    output:
-        'some_output_file'
-
-
-rule amst_preview:
+rule finalize_amst_transforms:
     input:
         expand(os.path.join(this_cache_dirpath, "amst_{idx}.json"), idx=batch_ids)
     output:
-        os.path.join(meta_dirpath, "amst_preview.h5"),
         os.path.join(meta_dirpath, "amst.json")
     params:
         run_info=run_info,
-        save_joined_transforms=True,
         compute_auto_pad=False
     threads: 1
     script:
-        os.path.join(src_dirpath, "snakemake_call_scripts", "alignment_preview.py")
+        os.path.join(src_dirpath, "snakemake_call_scripts", "finalize_alignment_transforms.py")
 
 
 rule amst:

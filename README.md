@@ -20,52 +20,56 @@ Prerequesite: Install conda on your system, e.g. from https://conda-forge.org/mi
 ### For local execution
 
 ```shell
-mamba create -n amst2-0.4.0-env -c bioconda -c conda-forge --override-channels python=3.11 "numpy<2.3" nibabel napari pyqt opencv zarr=2 vigra pandas snakemake=8
-conda activate amst2-0.4.0-env
+mamba create -n amst2-0.5.0-env -c bioconda -c conda-forge --override-channels python=3.11 "numpy<2.3" nibabel napari pyqt opencv zarr=2 vigra pandas snakemake=8
+conda activate amst2-0.5.0-env
 pip install SimpleITK-SimpleElastix transforms3d ruamel.yaml pyvsnr pytz tzdata
-pip install https://github.com/jhennies/squirrel/archive/refs/tags/0.5.5.tar.gz
-pip install https://github.com/jhennies/AMST2/archive/refs/tags/0.4.0.tar.gz
+pip install https://github.com/jhennies/squirrel/archive/refs/tags/0.6.0.tar.gz
+pip install https://github.com/jhennies/AMST2/archive/refs/tags/0.5.0.tar.gz
 ```
 
 ### For slurm cluster execution
 
 ```shell
-mamba create -n amst2-0.4.0-env -c bioconda -c conda-forge --override-channels python=3.11 "numpy<2.3" nibabel napari pyqt opencv zarr=2 vigra pandas snakemake=8 snakemake-executor-plugin-slurm=1
-conda activate amst2-0.4.0-env
+mamba create -n amst2-0.5.0-env -c bioconda -c conda-forge --override-channels python=3.11 "numpy<2.3" nibabel napari pyqt opencv zarr=2 vigra pandas snakemake=8 snakemake-executor-plugin-slurm=1
+conda activate amst2-0.5.0-env
 pip install SimpleITK-SimpleElastix transforms3d ruamel.yaml pyvsnr pytz tzdata
-pip install https://github.com/jhennies/squirrel/archive/refs/tags/0.5.5.tar.gz
-pip install https://github.com/jhennies/AMST2/archive/refs/tags/0.4.0.tar.gz
+pip install https://github.com/jhennies/squirrel/archive/refs/tags/0.6.0.tar.gz
+pip install https://github.com/jhennies/AMST2/archive/refs/tags/0.5.0.tar.gz
 ```
 
-## Usage
+## Documentation
 
-To test the installation, we recommend using this dataset: https://www.ebi.ac.uk/empiar/EMPIAR-10311/
+The command-line interface has two levels:
 
-I have set up a suitable subset of the EMPIAR-10311 dataset on my owncloud which you can test on in a new directory like so:
+- **[Individual commands (`amst2-*`)](docs/commands.md):** one operation per invocation, implemented with Snakemake.
+- **[Workflow commands (`amst2-wf-*`)](docs/workflows.md):** orchestrate pre-alignment and AMST across several operations.
 
-```shell
-wget https://oc.embl.de/index.php/s/RhlFWP3JGnuoIAM/download
-unzip download
-rm download
+Additional references:
+
+- [Workflow configuration, stages, inputs, and outputs](docs/workflow_configuration.md)
+- [Common CLI options](docs/common_options.md)
+- [Example: Fiji SIFT alignment followed by AMST2 NSBS](docs/fiji_sift_alignment.md)
+
+## Quick start
+
+Generate and edit a pre-alignment YAML configuration, then run it:
+
+```bash
+amst2-wf-pre_align-get_default_parameter_file -pi /path/to/input.ome.zarr -po /path/to/pre-align
+amst2-wf-pre_align-run params_pre_align.yaml
 ```
 
-Run the test alignment (remove the "--slurm" line if you are running locally):
+Generate and edit an AMST YAML configuration, explicitly pointing it at the raw input and pre-alignment results:
 
-```shell
-amst2-wf-nsbs_pre_align-get_default_parameter_file \
-  -pi hela-test-dataset/ \
-  -po pre-align \
-  -p general:resolution:[0.008,0.005,0.005] \
-     general:batch_size:8 \
-     general:max_cores_per_task:8 \
-     nsbs_alignment:batch_size:16 \
-     pre_align_to_tif_stack:active:true \
-  --slurm \
-  --estimate_crop_xy
-  
-amst2-wf-nsbs_pre_align-run params_pre_align.yaml
+```bash
+amst2-wf-amst-get_default_parameter_file \
+  -pi /path/to/input.ome.zarr \
+  -pp /path/to/pre-align/apply_pre_align/pre-align.ome.zarr \
+  -ppt /path/to/pre-align/pre-align.json \
+  -po /path/to/amst
+amst2-wf-amst-run params_amst.yaml
 ```
- 
-Also check out the most recent example for [pre alignment and AMST](examples/simple_pre_alignment_and_amst.md)
 
+See [Workflow configuration](docs/workflow_configuration.md) for the required pre-alignment paths and parameter sections. Each command supports `--help`.
 
+The original publication and implementation are linked above. A test dataset is available from EMPIAR-10311.

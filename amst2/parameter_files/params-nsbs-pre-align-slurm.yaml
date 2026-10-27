@@ -1,7 +1,7 @@
 # This is an example parameter file for the nth-slice-by-slice pre-alignment workflow
 # Copy this parameter file to your desired location and adjust to your needs
 # Then run the workflow using:
-#    amst2-wf-nsbs_pre_align-run /path/to/my/params-nsbs-pre-align-slurm.yaml
+#    amst2-wf-pre_align-run /path/to/my/params-nsbs-pre-align-slurm.yaml
 # This parameter file has been tested on the first 32 slices of the https://www.ebi.ac.uk/empiar/EMPIAR-10311/ dataset
 
 general:
@@ -19,8 +19,12 @@ general:
 
 stack_to_ome_zarr:
   # When active = true, the input dataset will be converted to ome.zarr
-  # This enables an alignment preview for the alignment steps below but otherwise is not necessary
   active: false
+
+workflow:
+  pre_existing_transforms: null
+  run_sbs: true
+  run_nsbs: true
 
 sbs_alignment:
   auto_mask: non-zero  # non-zero or variance
@@ -35,7 +39,6 @@ sbs_alignment:
   elx_number_of_resolutions: 2  # Increase for bigger initial jumps, if not using init_elx above
   elx_number_of_spatial_samples: 2048  # Increase for large images
   elx_maximum_number_of_iterations: 256  # Increase for finer alignment
-  preview_downsample_level: 3
   runtime:
     elastix_stack_alignment: 60
   mem:
@@ -46,7 +49,6 @@ nsbs_alignment:
   z_step: 8  # Adjust the z-step if needed
   auto_mask: non-zero
   gaussian_sigma: 2.0
-  preview_downsample_level: 2
   runtime:
     elastix_stack_alignment: 60
   mem:

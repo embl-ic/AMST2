@@ -77,12 +77,24 @@ def run_snakemake_workflow(run_script, wf_name):
         print(f'\n\n{e}\n')
         return 1
 
-    # Convert collected lines to a single string
+    # Require a successful exit AND a recognizable Snakemake completion log.
+    # A shell/cluster wrapper can return zero despite an underlying job failure.
     stderr_text = "".join(stderr_lines)
-    lines = [line.strip() for line in stderr_text.splitlines() if line.strip()]
-
-    # Check for success marker
-    if any("(100%) done" in line for line in lines[-10:]):
+    completed = any(
+        int(match.group(1)) == int(match.group(2)) and int(match.group(2)) > 0
+        for match in re.finditer(
+            r"(\d+) of (\d+) steps \(100(?:\.0+)?%\) done", stderr_text
+        )
+    )
+    nothing_to_do = "Nothing to be done" in stderr_text
+    failed = any(message in stderr_text for message in (
+        "Exiting because a job execution failed",
+        "At least one job did not complete successfully",
+        "WorkflowError:",
+        "Error in rule ",
+        "RuleException:",
+    ))
+    if process.returncode == 0 and not failed and (completed or nothing_to_do):
         print(
             "\033[F" * 6 +
             "_____________________________________________\n\n"
@@ -94,23 +106,18 @@ def run_snakemake_workflow(run_script, wf_name):
             flush=True
         )
         return 0
-    elif lines[-1].split(' ')[0][-6:] == 'Error:':
-        print(f'\n\n{stderr_text}')
-        print("_____________________________________________\n")
-        print(f"{wf_name} failed. See error above.")
-        print("_____________________________________________\n")
-        return 1
+
+    print(f'\n\n{stderr_text}')
+    print("_____________________________________________\n")
+    if failed:
+        reason = "Snakemake reported a job failure"
+    elif process.returncode != 0:
+        reason = f"command exited with status {process.returncode}"
     else:
-        print(f'\n\n{stderr_text}')
-        print("_____________________________________________\n")
-        print(f"{wf_name} failed.")
-        print(
-            "Check out {} for details or check out the output above!".format(
-                lines[-1] if lines else "the logs"
-            )
-        )
-        print("_____________________________________________\n")
-        return 1
+        reason = "command returned zero without a Snakemake completion marker"
+    print(f"{wf_name} failed: {reason}.")
+    print("_____________________________________________\n")
+    return 1
 
 
 def run_snakemake_workflow_old(
@@ -327,8 +334,8 @@ def run_nsbs_alignment(
         args.append(f'--initialize_offsets_kwargs {init_offsets_kwargs_str}')
     if 'max_offset_distance' in this_param_dict:
         args.append(f'--max_offset_distance {this_param_dict["max_offset_distance"]}')
-    if 'apply_final' in this_param_dict and this_param_dict['apply_final']:
-        args.append('--apply_final')
+    if this_param_dict.get('materialize_output', this_param_dict.get('apply_final', False)):
+        args.append('--materialize_output')
     if 'use_edges' in this_param_dict and this_param_dict['use_edges']:
         args.append('--use_edges')
     if 'auto_mask' in this_param_dict:
@@ -337,8 +344,6 @@ def run_nsbs_alignment(
     args.append(f'--downsample_factors {" ".join(this_param_dict["downsample_factors"]) if "downsample_factors" in this_param_dict else "2 2 2 2 2"}')
     if 'auto_pad' in this_param_dict and this_param_dict['auto_pad']:
         args.append('--auto_pad')
-    if 'preview_downsample_level' in this_param_dict:
-        args.append(f'--preview_downsample_level {this_param_dict["preview_downsample_level"]}')
     if 'cluster' in this_param_dict and this_param_dict['cluster'] == 'slurm':
         args.append('--cluster slurm')
     if 'cores' in this_param_dict:

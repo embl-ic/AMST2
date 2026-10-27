@@ -20,13 +20,13 @@ if __name__ == '__main__':
 
     print(f'z_range = {z_range}')
 
-    from squirrel.library.ome_zarr import get_ome_zarr_handle
+    from squirrel.library.ome_zarr import OMEZarrStore
     input_ome_zarr_filepath = run_info['input_ome_zarr_filepath']
-    input_ome_zarr_dataseth = get_ome_zarr_handle(input_ome_zarr_filepath, key='s0', mode='r')
+    input_ome_zarr_dataseth = OMEZarrStore(input_ome_zarr_filepath, mode='r').dataset(0)
 
     stack_shape = input_ome_zarr_dataseth.shape
     print(f'stack_shape = {stack_shape}')
-    print(f'output_shape = {get_ome_zarr_handle(output_ome_zarr_filepath, key="s0", mode="r").shape}')
+    print(f'output_shape = {OMEZarrStore(output_ome_zarr_filepath, mode="r").shape(0)}')
 
     # Serialize and apply the transformations
     from squirrel.library.normalization import normalize_slices
@@ -40,14 +40,14 @@ if __name__ == '__main__':
         n_workers=n_threads
     )
 
-    from squirrel.library.ome_zarr import chunk_to_ome_zarr
-    chunk_to_ome_zarr(
-        result_stack,
-        [batch_idx, 0, 0],
-        get_ome_zarr_handle(output_ome_zarr_filepath, mode='a'),
-        key='s0',
-        populate_downsample_layers=True,
-        verbose=verbose
+    output_store = OMEZarrStore(output_ome_zarr_filepath, mode='a')
+    output_store.write(
+        level=0,
+        position=[batch_idx, 0, 0],
+        data=result_stack,
+        update_pyramid=True,
+        check_pyramid_alignment=True,
+        require_empty=False
     )
 
     open(output, 'w').close()

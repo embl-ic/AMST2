@@ -9,7 +9,6 @@ with open('run.json', mode='r') as f:
 
 this_cache_dirpath = run_info['this_cache_dirpath']
 batch_ids = run_info['batch_ids']
-preview = not run_info['no_previews']
 src_dirpath = run_info['src_dirpath']
 meta_dirpath = run_info['meta_dirpath']
 transform = run_info['transform']

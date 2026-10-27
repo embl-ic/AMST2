@@ -13,11 +13,11 @@ def _run_amst(parameter_yaml, verbose=False):
         os.makedirs(output_dirpath, exist_ok=True)
 
     if 'resolution' not in parameter_dict['general']:
-        from squirrel.library.ome_zarr import get_ome_zarr_handle, get_scale_of_downsample_level, get_unit_of_dataset
+        from squirrel.library.ome_zarr import OMEZarrStore
         input_ome_zarr_filepath = parameter_dict['general']['pre_align_dirpath']
-        ome_zarr_h = get_ome_zarr_handle(input_ome_zarr_filepath, key=None, mode='r')
-        resolution = get_scale_of_downsample_level(ome_zarr_h, 0)
-        unit = get_unit_of_dataset(ome_zarr_h)
+        ome_zarr_h = OMEZarrStore(input_ome_zarr_filepath, mode='r')
+        resolution = ome_zarr_h.metadata.scale(0)
+        unit = ome_zarr_h.metadata.units
         parameter_dict['general']['resolution'] = resolution
         parameter_dict['general']['unit'] = unit
 
@@ -30,7 +30,7 @@ def _run_amst(parameter_yaml, verbose=False):
     run_amst(
         parameter_dict,
         parameter_key='amst',
-        pre_align_dirpath=os.path.join(output_dirpath, 'apply_pre_align', 'nsbs-pre-align.ome.zarr'),
+        pre_align_dirpath=os.path.join(output_dirpath, 'apply_pre_align', 'pre-align.ome.zarr'),
         verbose=verbose
     )
 
@@ -39,7 +39,7 @@ def _run_amst(parameter_yaml, verbose=False):
 
     from .lib import run_apply_transformation
     apply_amst_param_key = 'apply_amst'
-    pre_align_transforms = os.path.join(output_dirpath, 'nsbs-pre-align.json')
+    pre_align_transforms = os.path.join(output_dirpath, 'pre-align.json')
     pre_align_transforms = parameter_dict['general']['pre_align_transforms'] if 'pre_align_transforms' in parameter_dict['general'] else pre_align_transforms
     pre_align_transforms = parameter_dict[apply_amst_param_key]['pre_align_transforms'] if 'pre_align_transforms' in parameter_dict[apply_amst_param_key] else pre_align_transforms
     input_dirpath = os.path.join(output_dirpath, 'stack_to_ome_zarr', 'input-raw.ome.zarr')
@@ -49,7 +49,7 @@ def _run_amst(parameter_yaml, verbose=False):
         parameter_key=apply_amst_param_key,
         transforms_filepath=[
             pre_align_transforms,
-            os.path.join(output_dirpath, 'amst', 'amst.meta', amst_transforms_filename)
+            os.path.join(output_dirpath, 'amst', amst_transforms_filename)
         ],
         input_dirpath=input_dirpath,
         output_filename='amst.ome.zarr',
@@ -95,99 +95,6 @@ def amst():
     _run_amst(parameter_yaml, verbose=verbose)
 
 
-def _run_cleanup_amst(parameter_yaml, verbose=False, dryrun=False):
-
-    import shutil
-    from glob import glob
-
-    from .lib import load_parameter_yaml
-    parameter_dict = load_parameter_yaml(parameter_yaml)
-
-    output_dirpath = parameter_dict['general']['output_dirpath']
-
-    # rm -r */snk_cache
-    def remove_snk_caches(project_dir):
-        dirpaths = glob(os.path.join(project_dir, '*', 'snk_cache'))
-        for dirpath in dirpaths:
-            print(f'rm -r {dirpath}')
-            if not dryrun:
-                shutil.rmtree(dirpath)
-    remove_snk_caches(output_dirpath)
-
-    # rm */*.done
-    def remove_done_files(project_dir):
-        files = glob(os.path.join(project_dir, '*', '*.done'))
-        for file in files:
-            print(f'rm {file}')
-            if not dryrun:
-                os.remove(file)
-    remove_done_files(output_dirpath)
-
-    print('mv amst/amst-elastix-params.txt .')
-    if not dryrun:
-        shutil.move(os.path.join(output_dirpath, 'amst', 'amst-elastix-params.txt'), output_dirpath)
-
-    print('mv amst/amst.meta/amst/ amst-transforms')
-    if not dryrun:
-        shutil.move(
-            os.path.join(output_dirpath, 'amst', 'amst.meta', 'amst'),
-            os.path.join(output_dirpath, 'amst-transforms')
-        )
-
-    print('rm -r amst')
-    if not dryrun:
-        shutil.rmtree(os.path.join(output_dirpath, 'amst'))
-
-    print('mv amst_to_tif_stack/amst/ amst-aligned')
-    if not dryrun:
-        shutil.move(
-            os.path.join(output_dirpath, 'amst_to_tif_stack', 'amst'),
-            os.path.join(output_dirpath, 'amst-aligned')
-        )
-
-    print('rmdir amst_to_tif_stack/')
-    if not dryrun:
-        os.rmdir(os.path.join(output_dirpath, 'amst_to_tif_stack'))
-
-    print('mv apply_amst/amst.ome.zarr amst-aligned.ome.zarr')
-    if not dryrun:
-        shutil.move(
-            os.path.join(output_dirpath, 'apply_amst', 'amst.ome.zarr'),
-            os.path.join(output_dirpath, 'amst-aligned.ome.zarr')
-        )
-
-    print('rmdir apply_amst')
-    if not dryrun:
-        os.rmdir(os.path.join(output_dirpath, 'apply_amst'))
-
-
-def cleanup_amst():
-
-    # Argument parsing -----------------------------------
-
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description='Cleans up an AMST run',
-        formatter_class=argparse.RawTextHelpFormatter
-    )
-
-    parser.add_argument('parameter_yaml', type=str)
-    parser.add_argument('-v', '--verbose', action='store_true')
-    parser.add_argument('-d', '--dryrun', action='store_true')
-
-    args = parser.parse_args()
-
-    parameter_yaml = args.parameter_yaml
-    verbose = args.verbose
-    dryrun = args.dryrun
-
-    if verbose:
-        print(f'parameter_yaml = {parameter_yaml}')
-
-    _run_cleanup_amst(parameter_yaml, verbose=verbose, dryrun=dryrun)
-
-
 def get_default_parameter_file():
 
     # Argument parsing -----------------------------------
@@ -202,7 +109,7 @@ def get_default_parameter_file():
     parser.add_argument('-fp', '--output_filepath', type=str, default=None,
                         help='Filepath of the parameter file. By default it is created in the current directory')
     parser.add_argument('-pay', '--pre_align_yaml', type=str, default=None,
-                        help='If the pre-alignment was performed with amst2-wf-nsbs_pre_align_run, set this argument. All input filepaths will be properly set.')
+                        help='If the pre-alignment was performed with amst2-wf-pre_align-run, set this argument. All input filepaths will be properly set.')
     parser.add_argument('-pi', '--param_input_dirpath', type=str, default=None,
                         help='The parameter "general:input_dirpath" will be pre-set to this value')
     parser.add_argument('-po', '--param_output_dirpath', type=str, default=None,
@@ -246,9 +153,9 @@ def get_default_parameter_file():
         else:
             param_input_dirpath = pre_align_dict['general']['input_dirpath'] if param_input_dirpath is None else param_input_dirpath
         if param_pre_align_dirpath is None:
-            param_pre_align_dirpath = os.path.join(pre_align_output_dirpath, 'apply_pre_align', 'nsbs-pre-align.ome.zarr') if param_pre_align_dirpath is None else param_pre_align_dirpath
+            param_pre_align_dirpath = os.path.join(pre_align_output_dirpath, 'apply_pre_align', 'pre-align.ome.zarr') if param_pre_align_dirpath is None else param_pre_align_dirpath
         if param_pre_align_transforms is None:
-            param_pre_align_transforms = os.path.join(pre_align_output_dirpath, 'nsbs-pre-align.json') if param_pre_align_transforms is None else param_pre_align_transforms
+            param_pre_align_transforms = os.path.join(pre_align_output_dirpath, 'pre-align.json') if param_pre_align_transforms is None else param_pre_align_transforms
         if 'stack_key' in pre_align_dict['general']:
             if params is None:
                 params = []

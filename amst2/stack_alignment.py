@@ -41,8 +41,6 @@ def snk_default_amst_pre_alignment():
                         help='Median smoothing of offsets when combining local and TM')
     parser.add_argument('-cs', '--combine_sigma', type=float, default=8.,
                         help='Gaussian smoothing of offsets when combining local and TM')
-    parser.add_argument('--no_previews', action='store_true',
-                        help='No preview outputs are generated for the alignement steps')
     parser.add_argument('--mem', type=str, nargs='+', default=None,
                         help='Cluster job memory amounts for the snakemake rules.\n'
                              'For each rule define like so:\n'
@@ -51,8 +49,6 @@ def snk_default_amst_pre_alignment():
                         help='Cluster job runtimes for the snakemake rules. \n'
                              'For each rule define like so:\n'
                              '"rule_name:30"')
-    parser.add_argument('--preview_downsample_level', type=int, default=2,
-                        help='Downsample level of preview volumes; default=2')
 
     common_arg_fields = add_common_arguments_to_parser(parser)
     add_output_locations_to_parser(parser)
@@ -68,9 +64,7 @@ def snk_default_amst_pre_alignment():
     template_roi = args.template_roi
     combine_median = args.combine_median
     combine_sigma = args.combine_sigma
-    no_previews = args.no_previews
     tm_search_roi = args.tm_search_roi
-    preview_downsample_level = args.preview_downsample_level
     mem = args.mem
     runtime = args.runtime
 
@@ -81,24 +75,17 @@ def snk_default_amst_pre_alignment():
         fallback_output_name='pre-align.ome.zarr'
     )
     ome_zarr_args = args_to_dict(args, ome_zarr_fields)
-    meta_dirpath = os.path.join(
-        output_location_args['target_dirpath'],
-        f'{output_location_args["output_ome_zarr_filename"].replace(".ome.zarr", "")}.meta'
-    )
-    if not os.path.exists(meta_dirpath):
-        os.mkdir(meta_dirpath)
+    meta_dirpath = output_location_args['target_dirpath']
 
     # Generate run.json ----------------------------------
 
     from squirrel.library.io import load_data_handle
-    from squirrel.library.ome_zarr import (
-        get_scale_of_downsample_level, get_ome_zarr_handle, get_unit_of_dataset
-    )
+    from squirrel.library.ome_zarr import OMEZarrStore
     data_h, shape_h = load_data_handle(input_ome_zarr_filepath, key='s0', pattern=None)
     batch_ids = [x for x in range(0, shape_h[0], common_args['batch_size'])]
-    ome_zarr_h = get_ome_zarr_handle(input_ome_zarr_filepath, key=None, mode='r')
-    resolution = get_scale_of_downsample_level(ome_zarr_h, 0)
-    unit = get_unit_of_dataset(ome_zarr_h)
+    ome_zarr_h = OMEZarrStore(input_ome_zarr_filepath, mode='r')
+    resolution = ome_zarr_h.metadata.scale(0)
+    unit = ome_zarr_h.metadata.units
     dtype = str(data_h.dtype)
 
     assert common_args['batch_size'] in [4, 8, 16, 32, 64], 'Only allowing batch sizes of [4, 8, 16, 32, 64]!'
@@ -120,11 +107,9 @@ def snk_default_amst_pre_alignment():
         use_template_matching=template_roi is not None,
         combine_median=combine_median,
         combine_sigma=combine_sigma,
-        no_previews=no_previews,
         batch_ids=batch_ids,
         stack_shape=shape_h,
         src_dirpath=src_dirpath,
-        preview_downsample_level=preview_downsample_level,
         output_dtype=dtype,
         resolution=resolution,
         unit=unit,
@@ -174,16 +159,13 @@ def snk_default_amst_pre_alignment():
             sn_args,
             [
                 'elastix_stack_alignment',
-                'local_alignment_preview',
                 'template_matching',
-                'template_matching_preview',
-                'finalize_and_join_transforms',
-                'final_preview',
+                'finalize_and_join_transformations',
                 'create_ome_zarr',
                 'apply_final_transformations'
             ],
-            [16000, 8000, 24000, 8000, 100, 8000, 1024, 8000],
-            [30, 30, 30, 30, 5, 30, 5, 30],
+            [16000, 24000, 100, 1024, 8000],
+            [30, 30, 5, 5, 30],
             mem_args=mem,
             runtime_args=runtime
         )
@@ -241,10 +223,9 @@ def snk_elastix_stack_alignment():
                         help='Compute the information necessary for auto-padding and apply if requested')
     parser.add_argument('--determine_bounds', action='store_true',
                         help='Determine the bounds of each slice; Does not work with z_step > 1; Implicit for auto_pad')
-    parser.add_argument('--apply_final', action='store_true',
+    parser.add_argument('--materialize_output', '--apply_final',
+                        dest='materialize_output', action='store_true',
                         help='Apply the final transformation and create result ome-zarr')
-    parser.add_argument('--no_preview', action='store_true',
-                        help='No preview outputs are generated for the alignement steps')
     parser.add_argument('--initialize_offsets_method', type=str, default=None,
                         help='Method to solve big jumps: ["xcorr", "init_elx"]\n'
                              '  "xcorr": Big jumps are detected by the intersection over union of the data in adjacent '
@@ -291,8 +272,6 @@ def snk_elastix_stack_alignment():
                         help='Cluster job runtimes for the snakemake rules. \n'
                              'For each rule define like so:\n'
                              '"rule_name:30"')
-    parser.add_argument('--preview_downsample_level', type=int, default=2,
-                        help='Downsample level of preview volumes; default=2')
     parser.add_argument('--debug', action='store_true',
                         help='Set this for saving intermediate files, helpful for debugging')
 
@@ -317,8 +296,7 @@ def snk_elastix_stack_alignment():
     average_for_z_step = args.average_for_z_step
     auto_pad = args.auto_pad
     determine_bounds = args.determine_bounds
-    apply_final = args.apply_final
-    no_preview = args.no_preview
+    materialize_output = args.materialize_output
     initialize_offsets_method = args.initialize_offsets_method
     initialize_offsets_kwargs = args.initialize_offsets_kwargs
     max_offset_distance = args.max_offset_distance
@@ -327,7 +305,6 @@ def snk_elastix_stack_alignment():
     elx_number_of_spatial_samples = args.elx_number_of_spatial_samples
     elx_maximum_number_of_iterations = args.elx_maximum_number_of_iterations
     elx_microscopy_preset = args.elx_microscopy_preset
-    preview_downsample_level = args.preview_downsample_level
     mem = args.mem
     runtime = args.runtime
     debug = args.debug
@@ -351,12 +328,7 @@ def snk_elastix_stack_alignment():
         fallback_output_name='elastix.ome.zarr'
     )
     ome_zarr_args = args_to_dict(args, ome_zarr_fields)
-    meta_dirpath = os.path.join(
-        output_location_args['target_dirpath'],
-        f'{output_location_args["output_ome_zarr_filename"].replace(".ome.zarr", "")}.meta'
-    )
-    if not os.path.exists(meta_dirpath):
-        os.mkdir(meta_dirpath)
+    meta_dirpath = output_location_args['target_dirpath']
 
     # Generate run.json ----------------------------------
 
@@ -372,8 +344,8 @@ def snk_elastix_stack_alignment():
     if resolution is None:
         from squirrel.library.ome_zarr import OMEZarrStore
         store = OMEZarrStore(input_ome_zarr_filepath, mode='r')
-        resolution = store.get_scale(0)
-        unit = store.get_unit()
+        resolution = store.metadata.scale(0)
+        unit = store.metadata.units
     dtype = str(data_h.dtype)
 
     assert common_args['batch_size'] in [2, 4, 8, 16, 32, 64, 128], 'Only allowing batch sizes of [2, 4, 8, 16, 32, 64, 128]!'
@@ -397,18 +369,16 @@ def snk_elastix_stack_alignment():
         input_ome_zarr_filepath=input_ome_zarr_filepath,
         stack_pattern=stack_pattern,
         stack_key=stack_key,
-        no_preview=no_preview,
         batch_ids=batch_ids,
         stack_shape=shape_h,
         src_dirpath=src_dirpath,
-        preview_downsample_level=preview_downsample_level,
         output_dtype=dtype,
         resolution=resolution,
         unit=unit,
         meta_dirpath=meta_dirpath,
         auto_pad=auto_pad,
         determine_bounds=determine_bounds,
-        apply_final=apply_final,
+        materialize_output=materialize_output,
         elastix_stack_alignment_workflow_params=dict(
             key=stack_key,
             pattern=stack_pattern,
@@ -458,12 +428,11 @@ def snk_elastix_stack_alignment():
             sn_args,
             [
                 'elastix_stack_alignment',
-                'alignment_preview',
                 'create_ome_zarr',
                 'apply_final_transformations'
             ],
             [16000, 8000, 1024, 8000],
-            [30, 30, 5, 30],
+            [30, 5, 5, 30],
             mem_args=mem,
             runtime_args=runtime
         )
@@ -558,22 +527,22 @@ def snk_apply_transformation():
     if resolution is None:
         from squirrel.library.ome_zarr import OMEZarrStore
         store = OMEZarrStore(input_ome_zarr_filepath, mode='r')
-        resolution = store.get_scale(0)
-        unit = store.get_unit()
+        resolution = store.metadata.scale(0)
+        unit = store.metadata.units
     dtype = str(data_h.dtype)
 
     shapes = []
     for input_transforms_filepath in input_transforms_filepaths:
         if os.path.isdir(input_transforms_filepath):
             from squirrel.library.elastix import ElastixStack
-            this_stack = ElastixStack(dirpath=input_transforms_filepath)
-            if this_stack.image_shape() is not None:
-                shapes.append(this_stack.image_shape())
+            this_stack = ElastixStack.read(input_transforms_filepath)
+            if this_stack.image_shape is not None:
+                shapes.append(this_stack.image_shape)
         else:
             from squirrel.library.affine_matrices import AffineStack
-            this_stack = AffineStack(filepath=input_transforms_filepath)
-            if this_stack.exists_meta('stack_shape') and this_stack.get_meta('stack_shape') is not None:
-                shapes.append(this_stack.get_meta('stack_shape')[1:])
+            this_stack = AffineStack.read(input_transforms_filepath)
+            if this_stack.has_metadata('stack_shape') and this_stack.get_metadata('stack_shape') is not None:
+                shapes.append(this_stack.get_metadata('stack_shape')[1:])
     if len(shapes) > 0:
         import numpy as np
         shapes = np.array(shapes)
@@ -687,8 +656,6 @@ def snk_template_matching_stack_alignment():
                         help='Determine the bounds of each slice; Implicit for auto_pad')
     parser.add_argument('--apply_final', action='store_true',
                         help='Apply the final transformation and create result ome-zarr')
-    parser.add_argument('--no_preview', action='store_true',
-                        help='No preview outputs are generated for the alignement steps')
     parser.add_argument('--mem', type=str, nargs='+', default=None,
                         help='Cluster job memory amounts for the snakemake rules.\n'
                              'For each rule define like so:\n'
@@ -697,8 +664,6 @@ def snk_template_matching_stack_alignment():
                         help='Cluster job runtimes for the snakemake rules. \n'
                              'For each rule define like so:\n'
                              '"rule_name:30"')
-    parser.add_argument('--preview_downsample_level', type=int, default=2,
-                        help='Downsample level of preview volumes; default=2')
 
     common_arg_fields = add_common_arguments_to_parser(parser)
     add_output_locations_to_parser(parser)
@@ -715,8 +680,6 @@ def snk_template_matching_stack_alignment():
     auto_pad = args.auto_pad
     determine_bounds = args.determine_bounds
     apply_final = args.apply_final
-    no_preview = args.no_preview
-    preview_downsample_level = args.preview_downsample_level
     mem = args.mem
     runtime = args.runtime
 
@@ -727,25 +690,18 @@ def snk_template_matching_stack_alignment():
         fallback_output_name='elastix.ome.zarr'
     )
     ome_zarr_args = args_to_dict(args, ome_zarr_fields)
-    meta_dirpath = os.path.join(
-        output_location_args['target_dirpath'],
-        f'{output_location_args["output_ome_zarr_filename"].replace(".ome.zarr", "")}.meta'
-    )
-    if not os.path.exists(meta_dirpath):
-        os.mkdir(meta_dirpath)
+    meta_dirpath = output_location_args['target_dirpath']
 
     # Generate run.json ----------------------------------
 
     from squirrel.library.io import load_data_handle
-    from squirrel.library.ome_zarr import (
-        get_scale_of_downsample_level, get_ome_zarr_handle, get_unit_of_dataset
-    )
+    from squirrel.library.ome_zarr import OMEZarrStore
     print(f'input_ome_zarr_filepath = {input_ome_zarr_filepath}')
     data_h, shape_h = load_data_handle(input_ome_zarr_filepath, key='s0', pattern=None)
     batch_ids = [x for x in range(0, shape_h[0], common_args['batch_size'])]
-    ome_zarr_h = get_ome_zarr_handle(input_ome_zarr_filepath, key=None, mode='r')
-    resolution = get_scale_of_downsample_level(ome_zarr_h, 0)
-    unit = get_unit_of_dataset(ome_zarr_h)
+    ome_zarr_h = OMEZarrStore(input_ome_zarr_filepath, mode='r')
+    resolution = ome_zarr_h.metadata.scale(0)
+    unit = ome_zarr_h.metadata.units
     dtype = str(data_h.dtype)
 
     assert common_args['batch_size'] in [4, 8, 16, 32, 64], 'Only allowing batch sizes of [4, 8, 16, 32, 64]!'
@@ -763,11 +719,9 @@ def snk_template_matching_stack_alignment():
 
     run_info = dict(
         input_ome_zarr_filepath=input_ome_zarr_filepath,
-        no_preview=no_preview,
         batch_ids=batch_ids,
         stack_shape=shape_h,
         src_dirpath=src_dirpath,
-        preview_downsample_level=preview_downsample_level,
         output_dtype=dtype,
         resolution=resolution,
         unit=unit,
@@ -811,12 +765,12 @@ def snk_template_matching_stack_alignment():
             sn_args,
             [
                 'template_matching',
-                'template_matching_preview',
+                'finalize_template_matching_transforms',
                 'create_ome_zarr',
                 'apply_final_transformations'
             ],
             [16000, 8000, 1024, 8000],
-            [30, 30, 5, 30],
+            [30, 5, 5, 30],
             mem_args=mem,
             runtime_args=runtime
         )

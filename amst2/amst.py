@@ -41,8 +41,6 @@ def snk_amst():
                         help='Computes edges with a sobel filter for registration')
     parser.add_argument('--elastix_parameter_file', type=str, default=None,
                         help='Optionally, supply a parameter file for the registration step; default=None')
-    parser.add_argument('--no_previews', action='store_true',
-                        help='No preview outputs are generated for the alignement steps')
     parser.add_argument('--mem', type=str, nargs='+', default=None,
                         help='Cluster job memory amounts for the snakemake rules.\n'
                              'For each rule define like so:\n'
@@ -51,8 +49,6 @@ def snk_amst():
                         help='Cluster job runtimes for the snakemake rules. \n'
                              'For each rule define like so:\n'
                              '"rule_name:30"')
-    parser.add_argument('--preview_downsample_level', type=int, default=2,
-                        help='Downsample level of preview volumes; default=2')
 
     common_arg_fields = add_common_arguments_to_parser(parser)
     add_output_locations_to_parser(parser)
@@ -70,8 +66,6 @@ def snk_amst():
     use_clahe = args.use_clahe
     use_edges = args.use_edges
     elastix_parameter_file = os.path.abspath(args.elastix_parameter_file) if args.elastix_parameter_file is not None else None
-    no_previews = args.no_previews
-    preview_downsample_level = args.preview_downsample_level
     mem = args.mem
     runtime = args.runtime
 
@@ -84,21 +78,16 @@ def snk_amst():
         fallback_output_name='amst.ome.zarr'
     )
     ome_zarr_args = args_to_dict(args, ome_zarr_fields)
-    meta_dirpath = os.path.join(
-        output_location_args['target_dirpath'],
-        f'{output_location_args["output_ome_zarr_filename"].replace(".ome.zarr", "")}.meta'
-    )
-    if not os.path.exists(meta_dirpath):
-        os.mkdir(meta_dirpath)
+    meta_dirpath = output_location_args['target_dirpath']
 
     # Generate run.json ----------------------------------
 
     from squirrel.library.ome_zarr import OMEZarrStore
     store = OMEZarrStore(input_ome_zarr_filepath, mode='r')
-    resolution = store.get_scale(0)
-    dtype = np.dtype(store.get_dtype(0)).name
+    resolution = store.metadata.scale(0)
+    dtype = np.dtype(store.dtype(0)).name
     shape = store.shape(0)
-    unit = store.get_unit()
+    unit = store.metadata.units
 
     batch_ids = [x for x in range(0, shape[0], common_args['batch_size'])]
 
@@ -126,11 +115,9 @@ def snk_amst():
         use_clahe=use_clahe,
         use_edges=use_edges,
         elastix_parameter_file=elastix_parameter_file,
-        no_previews=no_previews,
         batch_ids=batch_ids,
         stack_shape=shape,
         src_dirpath=src_dirpath,
-        preview_downsample_level=preview_downsample_level,
         output_dtype=dtype,
         resolution=resolution,
         unit=unit,
@@ -164,7 +151,7 @@ def snk_amst():
             sn_args,
             [
                 'amst',
-                'join_transformations' if transform == 'bspline' else 'amst_preview'
+                'join_transformations' if transform == 'bspline' else 'finalize_amst_transforms'
             ],
             [24000, 8000],
             [30, 30],
