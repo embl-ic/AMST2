@@ -89,10 +89,8 @@ amst2-default_amst_pre_alignment --help
 | `--tm_search_roi` | — | The template will only be matched in this area. Note: the values for x, y and z are in dataset units! |
 | `-cm`, `--combine_median` | `8` | Median smoothing of offsets when combining local and TM |
 | `-cs`, `--combine_sigma` | `8.0` | Gaussian smoothing of offsets when combining local and TM |
-| `--no_previews` | — | No preview outputs are generated for the alignement steps |
 | `--mem` | — | Cluster job memory amounts for the snakemake rules. For each rule define like so: "rule_name:16000" |
 | `--runtime` | — | Cluster job runtimes for the snakemake rules. For each rule define like so: "rule_name:30" |
-| `--preview_downsample_level` | `2` | Downsample level of preview volumes; default=2 |
 
 **Shared options:** See [Common command options](common_options.md) for parameters added by AMST2’s shared argument-parsing helpers.
 
@@ -124,10 +122,8 @@ amst2-amst --help
 | `-cl`, `--use_clahe` | — | Runs a CLAHE filter before computing registration |
 | `-edg`, `--use_edges` | — | Computes edges with a sobel filter for registration |
 | `--elastix_parameter_file` | — | Optionally, supply a parameter file for the registration step; default=None |
-| `--no_previews` | — | No preview outputs are generated for the alignement steps |
 | `--mem` | — | Cluster job memory amounts for the snakemake rules. For each rule define like so: "rule_name:16000" |
 | `--runtime` | — | Cluster job runtimes for the snakemake rules. For each rule define like so: "rule_name:30" |
-| `--preview_downsample_level` | `2` | Downsample level of preview volumes; default=2 |
 
 **Shared options:** See [Common command options](common_options.md) for parameters added by AMST2’s shared argument-parsing helpers.
 
@@ -165,7 +161,6 @@ amst2-elastix_stack_alignment --help
 | `--auto_pad` | — | Compute the information necessary for auto-padding and apply if requested |
 | `--determine_bounds` | — | Determine the bounds of each slice; Does not work with z_step > 1; Implicit for auto_pad |
 | `--materialize_output`, `--apply_final` | — | Apply the final transformation and create result ome-zarr |
-| `--no_preview` | — | No preview outputs are generated for the alignement steps |
 | `--initialize_offsets_method` | — | Method to solve big jumps: ["xcorr", "init_elx"] "xcorr": Big jumps are detected by the intersection over union of the data in adjacent slices. Correction is performed by cross-correlation "init_elx": Using a highly binned version of the data, initial shifts are performed (grid). The shifted moving image is used as input for elastix registration and the resulting alignment measured by Mutual Information (MI). When MI < mi_thresh is reached or all positions of the grid are tested, the best offset is used to initialize the alignment |
 | `--initialize_offsets_kwargs` | `()` | Arguments for the respective initialization method. Syntax: "key:value" defaults for the respective method: "xcorr": iou_thresh:0.5 "init_elx: binning:32 spacing:256 elx_binning:4 elx_max_iters:32 mi_thresh:-0.8 |
 | `--max_offset_distance` | — | Maximum allowed offset distance for the final transforms, anything larger will be set to zero; Default=None |
@@ -176,7 +171,6 @@ amst2-elastix_stack_alignment --help
 | `--elx_microscopy_preset` | — | Loads elastix parameters set for different types of microscopy image data. Currently implemented: None (default): Elastix defaults for respective transform "fibsem": For FIB-SEM datasets "array-tomography": for array tomography datasets |
 | `--mem` | — | Cluster job memory amounts for the snakemake rules. For each rule define like so: "rule_name:16000" |
 | `--runtime` | — | Cluster job runtimes for the snakemake rules. For each rule define like so: "rule_name:30" |
-| `--preview_downsample_level` | `2` | Downsample level of preview volumes; default=2 |
 | `--debug` | — | Set this for saving intermediate files, helpful for debugging |
 
 **Shared options:** See [Common command options](common_options.md) for parameters added by AMST2’s shared argument-parsing helpers.
@@ -208,10 +202,8 @@ amst2-template_matching_stack_alignment --help
 | `--auto_pad` | — | Compute the information necessary for auto-padding and apply if requested |
 | `--determine_bounds` | — | Determine the bounds of each slice; Implicit for auto_pad |
 | `--apply_final` | — | Apply the final transformation and create result ome-zarr |
-| `--no_preview` | — | No preview outputs are generated for the alignement steps |
 | `--mem` | — | Cluster job memory amounts for the snakemake rules. For each rule define like so: "rule_name:16000" |
 | `--runtime` | — | Cluster job runtimes for the snakemake rules. For each rule define like so: "rule_name:30" |
-| `--preview_downsample_level` | `2` | Downsample level of preview volumes; default=2 |
 
 **Shared options:** See [Common command options](common_options.md) for parameters added by AMST2’s shared argument-parsing helpers.
 

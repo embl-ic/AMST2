@@ -58,10 +58,14 @@ amst2-wf-pre_align-get_default_parameter_file -pi /path/to/input.ome.zarr -po /p
 amst2-wf-pre_align-run params_pre_align.yaml
 ```
 
-Generate and edit an AMST YAML configuration, pointing it at the raw input and pre-alignment results:
+Generate and edit an AMST YAML configuration, explicitly pointing it at the raw input and pre-alignment results:
 
 ```bash
-amst2-wf-amst-get_default_parameter_file -pi /path/to/input.ome.zarr -po /path/to/amst
+amst2-wf-amst-get_default_parameter_file \
+  -pi /path/to/input.ome.zarr \
+  -pp /path/to/pre-align/apply_pre_align/pre-align.ome.zarr \
+  -ppt /path/to/pre-align/pre-align.json \
+  -po /path/to/amst
 amst2-wf-amst-run params_amst.yaml
 ```
 

@@ -30,7 +30,11 @@ The runner supports `--dryrun` and `--verbose`. The generator supports `-p`/`--p
 ## AMST
 
 ```bash
-amst2-wf-amst-get_default_parameter_file -pi /path/to/raw.ome.zarr -po /path/to/amst-output
+amst2-wf-amst-get_default_parameter_file \
+  -pi /path/to/raw.ome.zarr \
+  -pp /path/to/pre-align/apply_pre_align/pre-align.ome.zarr \
+  -ppt /path/to/pre-align/pre-align.json \
+  -po /path/to/amst-output
 amst2-wf-amst-run params_amst.yaml
 ```
 
