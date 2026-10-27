@@ -20,7 +20,7 @@ Prerequesite: Install conda on your system, e.g. from https://conda-forge.org/mi
 ### For local execution
 
 ```shell
-mamba create -n amst2-0.5.0-env -c bioconda -c conda-forge --override-channels python=3.11 "numpy<2.3" nibabel napari pyqt opencv zarr=2 vigra pandas snakemake=8
+mamba create -n amst2-0.5.0-env -c bioconda -c conda-forge --override-channels python=3.11 "numpy<2.3" nibabel napari pyqt opencv zarr=3 vigra pandas snakemake=8
 conda activate amst2-0.5.0-env
 pip install SimpleITK-SimpleElastix transforms3d ruamel.yaml pyvsnr pytz tzdata
 pip install https://github.com/jhennies/squirrel/archive/refs/tags/0.6.0.tar.gz
@@ -30,7 +30,7 @@ pip install https://github.com/jhennies/AMST2/archive/refs/tags/0.5.0.tar.gz
 ### For slurm cluster execution
 
 ```shell
-mamba create -n amst2-0.5.0-env -c bioconda -c conda-forge --override-channels python=3.11 "numpy<2.3" nibabel napari pyqt opencv zarr=2 vigra pandas snakemake=8 snakemake-executor-plugin-slurm=1
+mamba create -n amst2-0.5.0-env -c bioconda -c conda-forge --override-channels python=3.11 "numpy<2.3" nibabel napari pyqt opencv zarr=3 vigra pandas snakemake=8 snakemake-executor-plugin-slurm=1
 conda activate amst2-0.5.0-env
 pip install SimpleITK-SimpleElastix transforms3d ruamel.yaml pyvsnr pytz tzdata
 pip install https://github.com/jhennies/squirrel/archive/refs/tags/0.6.0.tar.gz
