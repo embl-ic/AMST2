@@ -29,10 +29,9 @@ class TestPreAlignNsbsIntegration(unittest.TestCase):
         with yaml_path.open(encoding='utf-8') as handle:
             parameters = yaml.safe_load(handle)
 
-        workflow = parameters.get('workflow', {})
-        self.assertFalse(workflow.get('pre_existing_transforms'))
-        self.assertFalse(workflow.get('run_sbs', True))
-        self.assertTrue(workflow.get('run_nsbs', True))
+        self.assertFalse(parameters['pre_existing_transforms']['active'])
+        self.assertFalse(parameters['sbs_alignment']['active'])
+        self.assertTrue(parameters['nsbs_alignment']['active'])
         self.assertFalse(parameters.get('stack_to_ome_zarr', {}).get('active', False))
         self.assertFalse(parameters.get('pre_align_to_tif_stack', {}).get('active', False))
 

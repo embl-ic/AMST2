@@ -43,10 +43,15 @@ amst2-wf-pre_align-get_default_parameter_file \
 The `--fiji` preset generates the standard YAML with these settings:
 
 ```yaml
-workflow:
-  pre_existing_transforms: path/to/fiji_sift/transforms.json
-  run_sbs: false
-  run_nsbs: true
+pre_existing_transforms:
+  active: true
+  transform_filepath: path/to/fiji_sift/transforms.json
+
+sbs_alignment:
+  active: false
+
+nsbs_alignment:
+  active: true
 ```
 
 Review the generated YAML before running. For a directory of TIFF files, verify `general.stack_pattern` matches the filenames (the default is `*.tif`); adjust dataset key, resolution, compute resources, and other options for your data. Paths in this example are relative to the directory from which the commands are run.

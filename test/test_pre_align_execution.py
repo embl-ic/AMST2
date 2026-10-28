@@ -24,11 +24,11 @@ class TestPreAlignExecution(unittest.TestCase):
                     'stack_key': 's0',
                     'auto_pad': False
                 },
-                'workflow': {
-                    'pre_existing_transforms': None,
-                    'run_sbs': False,
-                    'run_nsbs': True
-                }
+                'stack_to_ome_zarr': {'active': False},
+                        'pre_align_to_tif_stack': {'active': False},
+                        'pre_existing_transforms': {'active': False},
+                'sbs_alignment': {'active': False},
+                'nsbs_alignment': {'active': True}
             }
             with patch('amst2.workflows.lib.load_parameter_yaml', return_value=config), \
                     patch('amst2.workflows.lib.run_apply_transformation') as apply, \

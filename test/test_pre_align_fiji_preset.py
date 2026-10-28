@@ -22,9 +22,10 @@ class TestPreAlignFijiPreset(unittest.TestCase):
 
         params = generate.call_args.kwargs['params']
         self.assertEqual(params, [
-            'workflow:pre_existing_transforms:results/fiji-transforms.json',
-            'workflow:run_sbs:false',
-            'workflow:run_nsbs:true',
+            'pre_existing_transforms:active:true',
+            'pre_existing_transforms:transform_filepath:results/fiji-transforms.json',
+            'sbs_alignment:active:false',
+            'nsbs_alignment:active:true',
         ])
         self.assertEqual(generate.call_args.args[0], 'pre_align')
 
@@ -32,12 +33,12 @@ class TestPreAlignFijiPreset(unittest.TestCase):
         print('Testing get_default_parameter_file: explicit overrides')
         arguments = ['amst2-wf-pre_align-get_default_parameter_file',
                      '--fiji', 'results/fiji-transforms.json',
-                     '--params', 'workflow:run_nsbs:false']
+                     '--params', 'nsbs_alignment:active:false']
 
         with patch.object(sys, 'argv', arguments):
             with patch('amst2.workflows.lib.get_default_parameter_file_from_repo') as generate:
                 get_default_parameter_file()
 
         params = generate.call_args.kwargs['params']
-        self.assertEqual(params[-1], 'workflow:run_nsbs:false')
-        self.assertEqual(params[2], 'workflow:run_nsbs:true')
+        self.assertEqual(params[-1], 'nsbs_alignment:active:false')
+        self.assertEqual(params[3], 'nsbs_alignment:active:true')

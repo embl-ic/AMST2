@@ -4,16 +4,36 @@ import os
 
 
 def _alignment_stages(parameter_dict):
-    """Return enabled stages in their execution order."""
-    workflow = parameter_dict.get('workflow', {})
-    initial = workflow.get('pre_existing_transforms')
+    """Validate explicit stage activation and return stages in execution order."""
+    if 'workflow' in parameter_dict:
+        raise ValueError(
+            "The 'workflow' section is no longer supported. Configure each "
+            "stage with an explicit 'active' boolean instead."
+        )
+
+    stage_keys = ('stack_to_ome_zarr', 'pre_existing_transforms',
+                  'sbs_alignment', 'nsbs_alignment', 'pre_align_to_tif_stack')
     stages = []
-    if initial:
-        stages.append(('initial', initial))
-    if workflow.get('run_sbs', True):
-        stages.append(('sbs', None))
-    if workflow.get('run_nsbs', True):
-        stages.append(('nsbs', None))
+    for key in stage_keys:
+        if key not in parameter_dict or not isinstance(parameter_dict[key], dict):
+            raise ValueError(f"Missing required stage section '{key}' (with 'active: true/false').")
+        settings = parameter_dict[key]
+        if type(settings.get('active')) is not bool:
+            raise ValueError(f"Stage '{key}' requires an explicit boolean 'active: true/false'.")
+        if not settings['active']:
+            continue
+        if key in ('stack_to_ome_zarr', 'pre_align_to_tif_stack'):
+            continue
+        if key == 'pre_existing_transforms':
+            filepath = settings.get('transform_filepath')
+            if not isinstance(filepath, str) or not filepath.strip():
+                raise ValueError(
+                    "Active stage 'pre_existing_transforms' requires 'transform_filepath'."
+                )
+            stages.append(('initial', filepath))
+        else:
+            stages.append((key.removesuffix('_alignment'), None))
+
     if not stages:
         raise ValueError('Enable at least one of initial transforms, SBS, or NSBS')
     return stages
@@ -186,7 +206,7 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False, force=False, unl
         os.makedirs(output_dirpath, exist_ok=True)
         _check_run_identity(parameter_dict, stages, output_dirpath, force=force)
 
-    if parameter_dict.get('stack_to_ome_zarr', {}).get('active', False):
+    if parameter_dict['stack_to_ome_zarr']['active']:
         from .lib import run_stack_to_ome_zarr
         run_stack_to_ome_zarr(parameter_dict, parameter_key='stack_to_ome_zarr',
                               dryrun=dryrun, verbose=verbose)
@@ -259,7 +279,7 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False, force=False, unl
     if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'apply_pre_align/apply_pre_align.done')):
         return
 
-    if parameter_dict.get('pre_align_to_tif_stack', {}).get('active', False):
+    if parameter_dict['pre_align_to_tif_stack']['active']:
         from .lib import run_ome_zarr_to_stack
         run_ome_zarr_to_stack(
             parameter_dict, parameter_key='pre_align_to_tif_stack',
@@ -364,9 +384,10 @@ def get_default_parameter_file():
     if args.fiji is not None:
         # A preset, not a separate execution mode. Explicit --params may override it.
         params = [
-            f'workflow:pre_existing_transforms:{args.fiji}',
-            'workflow:run_sbs:false',
-            'workflow:run_nsbs:true',
+            'pre_existing_transforms:active:true',
+            f'pre_existing_transforms:transform_filepath:{args.fiji}',
+            'sbs_alignment:active:false',
+            'nsbs_alignment:active:true',
         ] + ([] if params is None else params)
     estimate_crop_xy = args.estimate_crop_xy
     slurm = args.slurm
