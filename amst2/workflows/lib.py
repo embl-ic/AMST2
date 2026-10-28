@@ -569,7 +569,8 @@ def run_apply_transformation(
         args.append(f'--group_name {this_param_dict["group_name"]}')
     if verbose:
         args.append('-v')
-    args.append('--no_autopad')
+    if parameter_key != 'apply_initial_transforms' or not this_param_dict.get('auto_pad', False):
+        args.append('--no_autopad')
     args.append('--continue_run')
 
     run_script = f'amst2-apply_transformation {" ".join(args)}'

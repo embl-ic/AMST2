@@ -25,10 +25,36 @@ rule all:
         _rule_all_inputs
 
 
+def _effective_transforms():
+    if run_info['no_autopad']:
+        return run_info['input_transforms_filepaths']
+    return [run_info['prepared_transforms_filepath']]
+
+
+def _create_inputs(wildcards):
+    if run_info['no_autopad']:
+        return []
+    return [run_info['prepared_shape_filepath']]
+
+
+if not run_info['no_autopad']:
+    rule prepare_transforms:
+        input:
+            run_info['input_transforms_filepaths']
+        output:
+            transforms=run_info['prepared_transforms_filepath'],
+            shape=run_info['prepared_shape_filepath']
+        params:
+            run_info=run_info
+        threads: min(run_info['cores'], run_info['max_cores_per_task'])
+        script:
+            os.path.join(src_dirpath, 'snakemake_call_scripts', 'prepare_apply_transforms.py')
+
+
 rule apply_final_transformations:
     input:
         run_info["output_ome_zarr_filepath"],
-        run_info["input_transforms_filepaths"]
+        _effective_transforms()
     output:
         os.path.join(this_cache_dirpath, "apply_final_transformations_{idx}.done")
     params:
@@ -39,14 +65,14 @@ rule apply_final_transformations:
 
 
 def _get_target_stack_shape():
-    # if run_info['no_autopad']:
-    #     return run_info['stack_shape']
-    # stack_shape_json = run_info["input_transforms_filepaths"]
-    # return f'{stack_shape_json}:meta:stack_shape'
-    return run_info['stack_shape']
+    if run_info['no_autopad']:
+        return run_info['stack_shape']
+    return run_info['prepared_shape_filepath']
 
 
 rule create_ome_zarr:
+    input:
+        _create_inputs
     output:
         directory(run_info["output_ome_zarr_filepath"])
     params:

@@ -2,7 +2,6 @@ import os
 import tempfile
 import unittest
 from unittest.mock import patch
-from types import ModuleType
 
 import yaml
 
@@ -42,7 +41,7 @@ class TestPreExistingStageOptions(unittest.TestCase):
             stage_params = initial.args[0]['apply_initial_transforms']
             self.assertEqual(stage_params['cores'], 4)
             self.assertEqual(stage_params['cluster'], 'slurm')
-            self.assertNotIn('auto_pad', stage_params)
+            self.assertTrue(stage_params['auto_pad'])
             self.assertNotIn('output_filename', stage_params)
             self.assertEqual(initial.kwargs['output_filename'], 'initial.ome.zarr')
             self.assertEqual(
@@ -63,11 +62,16 @@ class TestPreExistingStageOptions(unittest.TestCase):
                 run_apply_transformation(
                     params, 'apply_initial_transforms', 'affines.json',
                     output_filename='initial.ome.zarr')
-                self.assertIn('--no_autopad', runner.call_args.args[0])
+                self.assertNotIn('--no_autopad', runner.call_args.args[0])
                 params['apply_initial_transforms']['auto_pad'] = False
                 run_apply_transformation(
                     params, 'apply_initial_transforms', 'affines.json',
                     output_filename='initial.ome.zarr')
+                self.assertIn('--no_autopad', runner.call_args.args[0])
+                params['apply_pre_align'] = {'auto_pad': True}
+                run_apply_transformation(
+                    params, 'apply_pre_align', 'affines.json',
+                    output_filename='pre-align.ome.zarr')
                 self.assertIn('--no_autopad', runner.call_args.args[0])
 
     def test_imported_padding_inherits_general_and_can_be_overridden(self):
@@ -101,11 +105,12 @@ class TestPreExistingStageOptions(unittest.TestCase):
                     with open(filepath, 'w') as handle:
                         yaml.safe_dump(params, handle)
                     _run_pre_align(filepath, dryrun=True)
-                    transform = apply.call_args_list[-2].kwargs['transforms_filepath']
-                    self.assertEqual(transform.endswith('initial-padded.json'), padded)
+                    initial = apply.call_args_list[-2]
+                    self.assertEqual(initial.kwargs['transforms_filepath'], 'affines.json')
+                    self.assertEqual(initial.args[0]['apply_initial_transforms']['auto_pad'], padded)
 
-    def test_padding_applied_once_and_used_for_composition(self):
-        print('Testing imported transforms: global padding and composition')
+    def test_padding_is_delegated_to_snakemake_and_used_for_composition(self):
+        print('Testing imported transforms: padding is not computed by the driver')
         with tempfile.TemporaryDirectory() as directory:
             original = os.path.join(directory, 'affines.json')
             with open(original, 'w') as handle:
@@ -125,34 +130,24 @@ class TestPreExistingStageOptions(unittest.TestCase):
             with open(filepath, 'w') as handle:
                 yaml.safe_dump(params, handle)
 
-            def fake_padding(source, target, **kwargs):
-                with open(target, 'w') as handle:
-                    handle.write('[]')
-
             def fake_apply(*args, **kwargs):
                 key = kwargs['parameter_key']
-                done = os.path.join(directory, key, f'{key}.done')
-                os.makedirs(os.path.dirname(done), exist_ok=True)
-                with open(done, 'w'):
+                stage_dir = os.path.join(directory, key)
+                os.makedirs(stage_dir, exist_ok=True)
+                if key == 'apply_initial_transforms':
+                    with open(os.path.join(stage_dir, 'initial-padded.json'), 'w'):
+                        pass
+                with open(os.path.join(stage_dir, f'{key}.done'), 'w'):
                     pass
 
             def fake_align(*args, **kwargs):
-                done = os.path.join(directory, 'sbs_alignment', 'sbs_alignment.done')
-                os.makedirs(os.path.dirname(done), exist_ok=True)
-                with open(done, 'w'):
+                stage_dir = os.path.join(directory, 'sbs_alignment')
+                os.makedirs(stage_dir, exist_ok=True)
+                with open(os.path.join(stage_dir, 'sbs_alignment.done'), 'w'):
                     pass
 
-            squirrel = ModuleType('squirrel')
-            workflows = ModuleType('squirrel.workflows')
-            transformation = ModuleType('squirrel.workflows.transformation')
-            transformation.apply_auto_pad_workflow = fake_padding
-            with patch.dict('sys.modules', {
-                    'squirrel': squirrel, 'squirrel.workflows': workflows,
-                    'squirrel.workflows.transformation': transformation}), \
-                    patch('amst2.workflows.pre_align._validate_imported_affine_stack'), \
+            with patch('amst2.workflows.pre_align._validate_imported_affine_stack'), \
                     patch('amst2.workflows.pre_align._check_run_identity'), \
-                    patch.object(transformation, 'apply_auto_pad_workflow',
-                                 side_effect=fake_padding) as padding, \
                     patch('amst2.workflows.lib.run_apply_transformation',
                           side_effect=fake_apply) as apply, \
                     patch('amst2.workflows.lib.run_nsbs_alignment',
@@ -161,7 +156,7 @@ class TestPreExistingStageOptions(unittest.TestCase):
                 _run_pre_align(filepath)
                 padded = os.path.join(directory, 'apply_initial_transforms',
                                       'initial-padded.json')
-                self.assertEqual(padding.call_count, 1)
-                self.assertEqual(apply.call_args_list[0].kwargs['transforms_filepath'], padded)
+                self.assertEqual(apply.call_args_list[0].kwargs['transforms_filepath'], original)
+                self.assertTrue(apply.call_args_list[0].args[0]['apply_initial_transforms']['auto_pad'])
                 self.assertEqual(compose.call_args.args[0][0], padded)
                 self.assertTrue(os.path.isfile(original))

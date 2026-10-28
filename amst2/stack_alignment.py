@@ -531,6 +531,17 @@ def snk_apply_transformation():
         unit = store.metadata.units
     dtype = str(data_h.dtype)
 
+    if not no_autopad:
+        if len(input_transforms_filepaths) != 1 or not os.path.isfile(input_transforms_filepaths[0]):
+            raise ValueError('Auto-padding currently requires one affine JSON transform file')
+
+    prepared_transforms_filepath = os.path.join(
+        output_location_args['target_dirpath'], 'initial-padded.json'
+    ) if not no_autopad else None
+    prepared_shape_filepath = os.path.join(
+        output_location_args['target_dirpath'], 'initial-padded-shape.json'
+    ) if not no_autopad else None
+
     shapes = []
     for input_transforms_filepath in input_transforms_filepaths:
         if os.path.isdir(input_transforms_filepath):
@@ -576,6 +587,8 @@ def snk_apply_transformation():
         resolution=resolution,
         unit=unit,
         no_autopad=no_autopad,
+        prepared_transforms_filepath=prepared_transforms_filepath,
+        prepared_shape_filepath=prepared_shape_filepath,
         resample_interpolator=resample_interpolator,
         **output_location_args,
         **common_args,
@@ -593,7 +606,8 @@ def snk_apply_transformation():
     args_to_snakemake_arguments(args, sn_args, output_location_args=output_location_args)
     sn_args.snakefile = Path(os.path.join(src_dirpath, 'snakemake_workflows/apply_transformation.snk'))
     sn_args.set_threads = dict(
-        apply_final_transformations=min(args.batch_size, args.cores, args.max_cores_per_task)
+        apply_final_transformations=min(args.batch_size, args.cores, args.max_cores_per_task),
+        prepare_transforms=min(args.cores, args.max_cores_per_task)
     )
 
     if args.cluster is not None:
@@ -604,11 +618,12 @@ def snk_apply_transformation():
         set_resources(
             sn_args,
             [
+                'prepare_transforms',
                 'create_ome_zarr',
                 'apply_final_transformations'
             ],
-            [1024, 8000],
-            [5, 30],
+            [8000, 1024, 8000],
+            [30, 5, 30],
             mem_args=mem,
             runtime_args=runtime
         )
