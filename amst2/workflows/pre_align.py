@@ -222,18 +222,50 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False, force=False, unl
         if stage == 'initial':
             if not dryrun and not os.path.isfile(filepath):
                 raise FileNotFoundError(f'Initial transforms not found: {filepath}')
-            transforms.append(filepath)
+            effective_filepath = filepath
             if has_next_stage:
-                parameter_dict.setdefault('apply_initial_transforms', {})
+                settings = parameter_dict['pre_existing_transforms']
+                if 'output_filename' in settings:
+                    raise ValueError(
+                        'pre_existing_transforms.output_filename is not supported; '
+                        'the intermediate output is always initial.ome.zarr'
+                    )
+                parameter_dict['apply_initial_transforms'] = {
+                    key: value for key, value in settings.items()
+                    if key not in ('active', 'transform_filepath', 'auto_pad')
+                }
+                auto_pad = settings.get('auto_pad',
+                                        parameter_dict['general'].get('auto_pad', True))
+                done = 'apply_initial_transforms/apply_initial_transforms.done'
+                if auto_pad:
+                    effective_filepath = os.path.join(
+                        output_dirpath, 'apply_initial_transforms', 'initial-padded.json'
+                    )
+                    if dryrun:
+                        print(f'Auto-pad imported transforms: {filepath} -> {effective_filepath}')
+                    elif not os.path.exists(os.path.join(output_dirpath, done)):
+                        from squirrel.workflows.transformation import apply_auto_pad_workflow
+
+                        os.makedirs(os.path.dirname(effective_filepath), exist_ok=True)
+                        apply_auto_pad_workflow(
+                            filepath, effective_filepath, image_stack_path=current_input,
+                            key=parameter_dict['general'].get('stack_key', 's0'),
+                            pattern=parameter_dict['general'].get('stack_pattern', '*.tif'),
+                            verbose=verbose
+                        )
+                    elif not os.path.isfile(effective_filepath):
+                        raise FileNotFoundError(
+                            f'Completed imported-transform stage is missing {effective_filepath}'
+                        )
                 run_apply_transformation(
                     parameter_dict, parameter_key='apply_initial_transforms',
-                    transforms_filepath=filepath, input_dirpath=current_input,
+                    transforms_filepath=effective_filepath, input_dirpath=current_input,
                     output_filename='initial.ome.zarr', dryrun=dryrun, verbose=verbose
                 )
-                done = 'apply_initial_transforms/apply_initial_transforms.done'
                 current_input = os.path.join(
                     output_dirpath, 'apply_initial_transforms/initial.ome.zarr'
                 )
+            transforms.append(effective_filepath)
         else:
             key = f'{stage}_alignment'
             parameter_dict.setdefault(key, {})['materialize_output'] = has_next_stage
