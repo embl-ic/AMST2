@@ -87,6 +87,7 @@ def snk_stack_to_ome_zarr():
     dtype = str(data_h[0].dtype)
 
     run_info = dict(
+        run_small_jobs_locally=args.run_small_jobs_locally,
         stack_path=stack_path,
         stack_pattern=stack_pattern,
         stack_key=stack_key,
@@ -207,6 +208,7 @@ def snk_ome_zarr_to_stack():
     src_dirpath = os.path.dirname(os.path.realpath(__file__))
 
     run_info = dict(
+        run_small_jobs_locally=args.run_small_jobs_locally,
         ome_zarr_filepath=ome_zarr_filepath,
         ome_zarr_key=ome_zarr_key,
         target_dirpath=target_dirpath,

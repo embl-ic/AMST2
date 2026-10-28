@@ -102,6 +102,7 @@ def snk_default_amst_pre_alignment():
     src_dirpath = os.path.dirname(os.path.realpath(__file__))
 
     run_info = dict(
+        run_small_jobs_locally=args.run_small_jobs_locally,
         input_ome_zarr_filepath=input_ome_zarr_filepath,
         no_local_alignment=no_local_alignment,
         use_template_matching=template_roi is not None,
@@ -366,6 +367,7 @@ def snk_elastix_stack_alignment():
         transform = 'translation'
 
     run_info = dict(
+        run_small_jobs_locally=args.run_small_jobs_locally,
         input_ome_zarr_filepath=input_ome_zarr_filepath,
         stack_pattern=stack_pattern,
         stack_key=stack_key,
@@ -576,6 +578,7 @@ def snk_apply_transformation():
     src_dirpath = os.path.dirname(os.path.realpath(__file__))
 
     run_info = dict(
+        run_small_jobs_locally=args.run_small_jobs_locally,
         input_ome_zarr_filepath=input_ome_zarr_filepath,
         input_transforms_filepaths=input_transforms_filepaths,
         stack_pattern=stack_pattern,
@@ -733,6 +736,7 @@ def snk_template_matching_stack_alignment():
     src_dirpath = os.path.dirname(os.path.realpath(__file__))
 
     run_info = dict(
+        run_small_jobs_locally=args.run_small_jobs_locally,
         input_ome_zarr_filepath=input_ome_zarr_filepath,
         batch_ids=batch_ids,
         stack_shape=shape_h,

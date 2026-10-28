@@ -18,6 +18,9 @@ transform = run_info['transform']
 print(f'run_info = {run_info}')
 
 
+if run_info.get('run_small_jobs_locally', False):
+    localrules: finalize_amst_transforms
+
 rule all:
     input:
         os.path.join(meta_dirpath, "amst.json")

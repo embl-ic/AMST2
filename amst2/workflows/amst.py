@@ -137,6 +137,8 @@ def get_default_parameter_file():
                              '  Note: One Item consisting of group:parameter_name:value must not contain any spaces!\n'
                              '  Also note: You can generate any entry like this - also ones that have no effect!\n'
                              '  The idea of having this input argument is to make a workflow fully scriptable without the requirement for manually adjusting the parameter file.')
+    parser.add_argument('--run_small_jobs_locally', action='store_true',
+                        help='Set general:run_small_jobs_locally:true in the generated YAML')
     parser.add_argument('--slurm', action='store_true',
                         help='Creates the parameter file for a slurm cluster; Note that the compute settings may '
                              'require adjustment')
@@ -151,6 +153,10 @@ def get_default_parameter_file():
     param_pre_align_dirpath = args.param_pre_align_dirpath
     param_pre_align_transforms = args.param_pre_align_transforms
     params = args.params
+    if args.run_small_jobs_locally:
+        params = [] if params is None else params
+        if not any(item.startswith('general:run_small_jobs_locally:') for item in params):
+            params.append('general:run_small_jobs_locally:true')
     slurm = args.slurm
     verbose = args.verbose
 

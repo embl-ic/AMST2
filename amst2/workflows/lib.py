@@ -382,6 +382,8 @@ def run_stack_to_ome_zarr(
         args.append(f'--group_name {this_param_dict["group_name"]}')
     if verbose:
         args.append('-v')
+    if this_param_dict.get('run_small_jobs_locally', False):
+        args.append('--run_small_jobs_locally')
     args.append('--continue_run')
 
     run_script = f'amst2-stack_to_ome_zarr {" ".join(args)}'
@@ -493,6 +495,8 @@ def run_nsbs_alignment(
         args.append('--debug')
     if verbose:
         args.append('-v')
+    if this_param_dict.get('run_small_jobs_locally', False):
+        args.append('--run_small_jobs_locally')
     args.append('--continue_run')
 
     run_script = f'amst2-elastix_stack_alignment {" ".join(args)}'
@@ -571,6 +575,8 @@ def run_apply_transformation(
         args.append('-v')
     if parameter_key != 'apply_initial_transforms' or not this_param_dict.get('auto_pad', False):
         args.append('--no_autopad')
+    if this_param_dict.get('run_small_jobs_locally', False):
+        args.append('--run_small_jobs_locally')
     args.append('--continue_run')
 
     run_script = f'amst2-apply_transformation {" ".join(args)}'
@@ -624,6 +630,7 @@ def run_ome_zarr_to_stack(
         f"{'--runtime {}'.format(runtime_str) if 'runtime' in this_param_dict else ''} "
         f"{'--group_name {}'.format(this_param_dict['group_name']) if 'group_name' in this_param_dict else ''} "
         f"{'-v' if verbose else ''} "
+        f"{'--run_small_jobs_locally' if this_param_dict.get('run_small_jobs_locally', False) else ''} "
         "--continue_run"
     )
 
@@ -694,6 +701,7 @@ def run_amst(
         f"{'--runtime {}'.format(runtime_str) if 'runtime' in this_param_dict else ''} "
         f"{'--group_name {}'.format(this_param_dict['group_name']) if 'group_name' in this_param_dict else ''} "
         f"{'-v' if verbose else ''} "
+        f"{'--run_small_jobs_locally' if this_param_dict.get('run_small_jobs_locally', False) else ''} "
         "--continue_run"
     )
 

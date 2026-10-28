@@ -13,6 +13,9 @@ src_dirpath = run_info['src_dirpath']
 print(f'run_info = {run_info}')
 
 
+if run_info.get('run_small_jobs_locally', False):
+    localrules: create_ome_zarr
+
 rule all:
     input:
         expand("normalize_stack_{idx}.done", idx=batch_ids)

@@ -381,6 +381,8 @@ def get_default_parameter_file():
                              '  The idea of having this input argument is to make a workflow fully scriptable without the requirement for manually adjusting the parameter file.')
     parser.add_argument('--fiji', metavar='AFFINE_JSON', type=str, default=None,
                         help='Use an imported affine stack (e.g. from Fiji SIFT) instead of SBS, followed by NSBS')
+    parser.add_argument('--run_small_jobs_locally', action='store_true',
+                        help='Set general:run_small_jobs_locally:true in the generated YAML')
     parser.add_argument('--slurm', action='store_true',
                         help='Creates the parameter file for a slurm cluster; Note that the compute settings may '
                              'require adjustment')
@@ -407,6 +409,10 @@ def get_default_parameter_file():
             'nsbs_alignment:active:true',
         ] + ([] if params is None else params)
     estimate_crop_xy = args.estimate_crop_xy
+    if args.run_small_jobs_locally:
+        params = [] if params is None else params
+        if not any(item.startswith('general:run_small_jobs_locally:') for item in params):
+            params.append('general:run_small_jobs_locally:true')
     slurm = args.slurm
 
     verbose = args.verbose
