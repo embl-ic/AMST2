@@ -2,6 +2,42 @@
 import os
 
 
+def _summarize_snakemake_failure(stderr_text, wf_name):
+    """Extract actionable details without guessing missing job metadata."""
+    import re
+
+    rule_matches = re.findall(r'Error in rule ([\w.-]+):', stderr_text)
+    wildcard_matches = re.findall(r'^\s*wildcards:\s*(.+)$', stderr_text,
+                                  flags=re.MULTILINE)
+    log_matches = re.findall(r'^\s*log:\s*(.+)$', stderr_text,
+                             flags=re.MULTILINE)
+    exception_matches = re.findall(
+        r'^\s*(?:[\w.]+Error|[\w.]+Exception):\s*.*$',
+        stderr_text, flags=re.MULTILINE)
+
+    print(f'\nAMST2 failure diagnostics — stage: {wf_name}')
+    if rule_matches:
+        print(f'  Failed rule: {rule_matches[-1]}')
+    if wildcard_matches:
+        wildcards = wildcard_matches[-1].strip()
+        print(f'  Wildcards: {wildcards}')
+        idx_match = re.search(r'(?:^|[,\s])idx=(\d+)', wildcards)
+        if idx_match:
+            print(f'  Batch start index (idx): {idx_match.group(1)}')
+            print('  Slice range: see batch_size in the stage configuration')
+    if log_matches:
+        print(f'  Job log: {log_matches[-1].strip()}')
+    if exception_matches:
+        print(f'  Reported error: {exception_matches[-1].strip()}')
+    if 'LockException:' in stderr_text:
+        print('  Lock detected: verify no other Snakemake process is running,')
+        print('  then use the high-level workflow command with --unlock.')
+    if not any((rule_matches, wildcard_matches, log_matches,
+                exception_matches)):
+        print('  No rule or job details found in Snakemake output.')
+    print('  Full Snakemake stderr follows below.\n')
+
+
 def run_snakemake_workflow(run_script, wf_name):
     import subprocess
     import signal
@@ -140,7 +176,8 @@ def run_snakemake_workflow(run_script, wf_name):
         )
         return 0
 
-    print(f'\n\n{stderr_text}')
+    _summarize_snakemake_failure(stderr_text, wf_name)
+    print(f'\n{stderr_text}')
     print("_____________________________________________\n")
     if failed:
         reason = "Snakemake reported a job failure"
