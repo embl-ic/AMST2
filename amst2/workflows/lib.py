@@ -4,6 +4,7 @@ import os
 
 def run_snakemake_workflow(run_script, wf_name):
     import subprocess
+    import signal
     import re
     os.environ["PYTHONUNBUFFERED"] = "1"
 
@@ -13,10 +14,11 @@ def run_snakemake_workflow(run_script, wf_name):
             run_script,
             shell=True,
             # executable="/bin/bash",
-            stdout=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            start_new_session=True,
         )
 
         # Collect stderr as we stream it
@@ -66,6 +68,36 @@ def run_snakemake_workflow(run_script, wf_name):
 
         process.wait()
 
+    except KeyboardInterrupt:
+        # A second Ctrl+C must not interrupt process-group cleanup.
+        previous_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        print(f'\n{wf_name} interrupted; stopping Snakemake and its child jobs...', flush=True)
+        try:
+            os.killpg(process.pid, signal.SIGINT)
+        except ProcessLookupError:
+            pass
+
+        try:
+            try:
+                process.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.wait()
+        finally:
+            process.stderr.close()
+            signal.signal(signal.SIGINT, previous_handler)
+        print(f'{wf_name} interrupted. Completed batches can be resumed.')
+        return 130
     except subprocess.CalledProcessError as e:
         print(f"\n\n{e.stderr}\n")
         print(f"\n{e.stdout}\n")
@@ -93,6 +125,7 @@ def run_snakemake_workflow(run_script, wf_name):
         "WorkflowError:",
         "Error in rule ",
         "RuleException:",
+        "LockException:",
     ))
     if process.returncode == 0 and not failed and (completed or nothing_to_do):
         print(
@@ -119,6 +152,67 @@ def run_snakemake_workflow(run_script, wf_name):
     print("_____________________________________________\n")
     return 1
 
+
+
+def unlock_snakemake_workflows(parameter_dict, stage_names):
+    """Unlock existing Snakemake caches without starting processing jobs.
+
+    The cache directory and Snakefile names follow AMST2's low-level
+    output_locations_to_dict() convention. Never create missing caches.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    snakefiles = {
+        'stack_alignment': 'elastix_stack_alignment.snk',
+        'apply_transformation': 'apply_transformation.snk',
+        'stack_to_ome_zarr': 'stack_to_ome_zarr.snk',
+        'ome_zarr_to_stack': 'ome_zarr_to_stack.snk',
+        'amst': 'amst_affine.snk',
+    }
+    source_dir = Path(__file__).resolve().parents[1] / 'snakemake_workflows'
+    output_dir = Path(parameter_dict['general']['output_dirpath'])
+    unlocked = 0
+
+    for stage in stage_names:
+        cache_root = output_dir / stage / 'snk_cache'
+        if not cache_root.is_dir():
+            continue
+        for cache_dir in sorted(cache_root.iterdir()):
+            if not cache_dir.is_dir() or not (cache_dir / 'run.json').is_file():
+                continue
+            prefix = next((name for name in snakefiles
+                           if cache_dir.name.startswith(name + '_')), None)
+            if prefix is None:
+                raise RuntimeError(f'Unknown Snakemake cache type: {cache_dir}')
+            snakefile = source_dir / snakefiles[prefix]
+            if prefix == 'amst':
+                import json
+                with open(cache_dir / 'run.json') as handle:
+                    transform = json.load(handle).get('transform')
+                if transform in ('affine', 'AffineTransform'):
+                    snakefile = source_dir / 'amst_affine.snk'
+                elif transform in ('bspline', 'BSplineTransform'):
+                    snakefile = source_dir / 'amst_bspline.snk'
+                else:
+                    raise RuntimeError(f'Unsupported AMST transform in {cache_dir}: {transform}')
+
+            command = ['snakemake', '--unlock', '--cores', '1',
+                       '--directory', str(cache_dir.resolve()),
+                       '--snakefile', str(snakefile)]
+            print(f'Unlocking {cache_dir}', flush=True)
+            result = subprocess.run(command, check=False)
+            if result.returncode != 0:
+                raise RuntimeError(f'Snakemake unlock failed for {cache_dir} '
+                                   f'(exit status {result.returncode})')
+            unlocked += 1
+
+    if not unlocked:
+        print('No existing Snakemake caches found to unlock.')
+    else:
+        print(f'Unlocked {unlocked} Snakemake cache(s).')
+    print('Only use --unlock when no other instance is running.', file=sys.stderr)
 
 def run_snakemake_workflow_old(
         run_script, wf_name,

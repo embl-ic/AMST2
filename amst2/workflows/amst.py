@@ -2,10 +2,18 @@
 import os
 
 
-def _run_amst(parameter_yaml, verbose=False):
+def _run_amst(parameter_yaml, verbose=False, unlock=False):
 
     from .lib import load_parameter_yaml
     parameter_dict = load_parameter_yaml(parameter_yaml)
+
+    if unlock:
+        from .lib import unlock_snakemake_workflows
+
+        unlock_snakemake_workflows(
+            parameter_dict, ['amst', 'apply_amst', 'amst_to_tif_stack']
+        )
+        return
 
     output_dirpath = parameter_dict['general']['output_dirpath']
 
@@ -82,6 +90,8 @@ def amst():
     )
 
     parser.add_argument('parameter_yaml', type=str)
+    parser.add_argument('--unlock', action='store_true',
+                        help='Unlock existing Snakemake caches and exit; do not use during active runs.')
     parser.add_argument('-v', '--verbose', action='store_true')
 
     args = parser.parse_args()
@@ -92,7 +102,7 @@ def amst():
     if verbose:
         print(f'parameter_yaml = {parameter_yaml}')
 
-    _run_amst(parameter_yaml, verbose=verbose)
+    _run_amst(parameter_yaml, verbose=verbose, unlock=args.unlock)
 
 
 def get_default_parameter_file():

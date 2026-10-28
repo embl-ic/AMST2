@@ -54,8 +54,24 @@ def _compose_stage_transforms(transform_filepaths, output_filepath, verbose=Fals
     return output_filepath
 
 
-def _check_run_identity(parameter_dict, stages, output_dirpath):
-    """Reject reuse of a completed run with different effective inputs."""
+def _parameter_differences(previous, current, prefix=''):
+    """Return readable differences between two nested parameter dictionaries."""
+    differences = []
+    for key in sorted(set(previous) | set(current)):
+        name = f'{prefix}.{key}' if prefix else str(key)
+        if key not in previous:
+            differences.append(f'  {name}: added {current[key]!r}')
+        elif key not in current:
+            differences.append(f'  {name}: removed (was {previous[key]!r})')
+        elif isinstance(previous[key], dict) and isinstance(current[key], dict):
+            differences.extend(_parameter_differences(previous[key], current[key], name))
+        elif previous[key] != current[key]:
+            differences.append(f'  {name}: {previous[key]!r} -> {current[key]!r}')
+    return differences
+
+
+def _check_run_identity(parameter_dict, stages, output_dirpath, force=False):
+    """Check run identity; force permits reuse without changing recorded identity."""
     manifest_dirpath = os.path.join(output_dirpath, '.amst2')
     manifest = os.path.join(manifest_dirpath, 'run-identity.json')
     configuration = json.dumps(parameter_dict, sort_keys=True, default=str)
@@ -68,15 +84,33 @@ def _check_run_identity(parameter_dict, stages, output_dirpath):
                 'external_transforms': external}
     if os.path.isfile(manifest):
         with open(manifest) as handle:
-            if json.load(handle) != identity:
-                raise RuntimeError('Pre-align inputs or parameters changed. Use a fresh output directory.')
+            previous = json.load(handle)
+        if previous.get('configuration') != identity['configuration'] or previous.get('external_transforms') != external:
+            details = []
+            if previous.get('configuration') != identity['configuration']:
+                if isinstance(previous.get('parameters'), dict):
+                    details.extend(_parameter_differences(previous['parameters'], parameter_dict))
+                else:
+                    details.append('  Previous manifest has no parameter details (legacy format).')
+            if previous.get('external_transforms') != external:
+                details.append('  Imported transformation file paths or contents changed.')
+            message = ('Pre-align inputs or parameters changed:\n' + '\n'.join(details)
+                       + '\nExisting outputs may be incompatible. To resume without deleting '
+                       'completed results, use --force. Otherwise remove affected '
+                       'outputs explicitly before restarting.')
+            if not force:
+                raise RuntimeError(message)
+            print('WARNING: ' + message + '\nProceeding with --force; recorded identity unchanged.')
     elif any(os.scandir(output_dirpath)):
-        raise RuntimeError('Pre-align output directory contains untracked results. Use a fresh directory.')
+        message = ('Pre-align output directory contains untracked results. '
+                   'Use a fresh directory or --force to reuse existing outputs.')
+        if not force:
+            raise RuntimeError(message)
+        print('WARNING: ' + message + '\nProceeding with --force; no identity recorded.')
     else:
         os.makedirs(manifest_dirpath, exist_ok=True)
         with open(manifest, 'w') as handle:
-            json.dump(identity, handle, indent=2)
-
+            json.dump({**identity, 'parameters': parameter_dict}, handle, indent=2, default=str)
 
 
 def _validate_imported_affine_stack(filepath, input_dirpath, stack_key='s0', stack_pattern='*.tif'):
@@ -121,7 +155,7 @@ def _validate_imported_affine_stack(filepath, input_dirpath, stack_key='s0', sta
     return transforms
 
 
-def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
+def _run_pre_align(parameter_yaml, dryrun=False, verbose=False, force=False, unlock=False):
 
     from .lib import load_parameter_yaml
     from .lib import run_apply_transformation
@@ -129,6 +163,15 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
 
     parameter_dict = load_parameter_yaml(parameter_yaml)
     stages = _alignment_stages(parameter_dict)
+    if unlock:
+        from .lib import unlock_snakemake_workflows
+
+        stage_names = ['stack_to_ome_zarr', 'apply_initial_transforms',
+                       'sbs_alignment', 'nsbs_alignment', 'apply_pre_align',
+                       'pre_align_to_tif_stack']
+        unlock_snakemake_workflows(parameter_dict, stage_names)
+        return
+
     output_dirpath = parameter_dict['general']['output_dirpath']
     original_input = parameter_dict['general']['input_dirpath']
 
@@ -141,7 +184,7 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
                     stack_pattern=parameter_dict['general'].get('stack_pattern', '*.tif')
                 )
         os.makedirs(output_dirpath, exist_ok=True)
-        _check_run_identity(parameter_dict, stages, output_dirpath)
+        _check_run_identity(parameter_dict, stages, output_dirpath, force=force)
 
     if parameter_dict.get('stack_to_ome_zarr', {}).get('active', False):
         from .lib import run_stack_to_ome_zarr
@@ -242,18 +285,25 @@ def pre_align():
     parser.add_argument('-d', '--dryrun', action='store_true',
                         help='Dry-run: Displays the amst2 commands that would be run.')
     parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument('--unlock', action='store_true',
+                        help='Unlock existing Snakemake caches and exit; do not use during active runs.')
+    parser.add_argument('--force', action='store_true',
+                        help='Allow resuming despite changed inputs or parameters; do not recompute completed steps.')
 
     args = parser.parse_args()
 
     parameter_yaml = args.parameter_yaml
     dryrun = args.dryrun
     verbose = args.verbose
+    force = args.force
+    unlock = args.unlock
 
     if verbose:
         print(f'parameter_yaml = {parameter_yaml}')
         print(f'dryrun = {dryrun}')
 
-    _run_pre_align(parameter_yaml, dryrun=dryrun, verbose=verbose)
+    _run_pre_align(parameter_yaml, dryrun=dryrun, verbose=verbose,
+                   force=force, unlock=unlock)
 
 
 def get_default_parameter_file():

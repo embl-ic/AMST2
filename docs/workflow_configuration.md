@@ -23,7 +23,7 @@ The principal YAML sections are:
 
 The `workflow` section supports `run_sbs`, `run_nsbs` (both default to `true` when omitted), and `pre_existing_transforms` (default `null`). At least one of these stages must be active. Enabled stages run in this order: imported transforms → SBS → NSBS. The composed affine stack maps output coordinates to input coordinates. An imported stack must have one finite 2D affine transform per input Z-slice, with compatible shape metadata when present.
 
-The workflow writes `pre-align.json` and materializes the final image at `apply_pre_align/pre-align.ome.zarr` beneath `general.output_dirpath`. Intermediate volumes are materialized only when needed by subsequent stages. The `.amst2/run-identity.json` manifest detects changes to effective configuration and imported transforms; use a fresh output directory when those change.
+The workflow writes `pre-align.json` and materializes the final image at `apply_pre_align/pre-align.ome.zarr` beneath `general.output_dirpath`. Intermediate volumes are materialized only when needed by subsequent stages. The `.amst2/run-identity.json` manifest detects changes to effective configuration and imported transforms; by default rejects reuse when those change. Use `--force` to bypass this check and resume using existing completed results without automatically recomputing them. The recorded identity is not overwritten on a forced mismatch; manually remove affected and downstream outputs when recomputation is needed.
 
 For a worked example that imports Fiji SIFT transformations, skips SBS, and runs NSBS, see [Fiji SIFT alignment](fiji_sift_alignment.md).
 
