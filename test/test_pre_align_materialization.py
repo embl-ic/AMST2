@@ -40,11 +40,13 @@ class TestPreAlignMaterialization(unittest.TestCase):
                             'stack_key': 's0',
                             'auto_pad': False,
                         },
-                        'workflow': {
-                            'pre_existing_transforms': initial_path if initial else None,
-                            'run_sbs': sbs,
-                            'run_nsbs': nsbs,
+                        'stack_to_ome_zarr': {'active': False},
+                        'pre_align_to_tif_stack': {'active': False},
+                        'pre_existing_transforms': {
+                            'active': initial, 'transform_filepath': initial_path
                         },
+                        'sbs_alignment': {'active': sbs},
+                        'nsbs_alignment': {'active': nsbs},
                     }
                     calls = []
 

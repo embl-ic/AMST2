@@ -15,15 +15,15 @@ The principal YAML sections are:
 | --- | --- |
 | `general` | Input/output paths, dataset key or filename pattern, physical resolution/unit, padding, cores, and batch sizing. |
 | `stack_to_ome_zarr` | Optional conversion of source image data to OME-Zarr. |
-| `workflow` | Enable SBS and/or NSBS; optionally supply `pre_existing_transforms` as a JSON affine stack. |
+| `pre_existing_transforms` | Import an existing JSON affine stack when `active: true`. |
 | `sbs_alignment` | Local slice-by-slice alignment options, including masks and elastix initialization. |
 | `nsbs_alignment` | Long-range alignment options, including `z_step`. |
 | `apply_pre_align` | Final application of the composed pre-alignment transforms. |
 | `pre_align_to_tif_stack` | Optional export of the final pre-aligned volume as TIFF. |
 
-The `workflow` section supports `run_sbs`, `run_nsbs` (both default to `true` when omitted), and `pre_existing_transforms` (default `null`). At least one of these stages must be active. Enabled stages run in this order: imported transforms → SBS → NSBS. The composed affine stack maps output coordinates to input coordinates. An imported stack must have one finite 2D affine transform per input Z-slice, with compatible shape metadata when present.
+The `workflow` section has been removed. All optional stage sections (`stack_to_ome_zarr`, `pre_existing_transforms`, `sbs_alignment`, `nsbs_alignment`, and `pre_align_to_tif_stack`) must exist and explicitly contain a YAML boolean `active: true` or `active: false`. Disabled stages may contain only `active: false`. An active `pre_existing_transforms` stage also requires `transform_filepath` pointing to a JSON affine stack. At least one of imported transforms, SBS, or NSBS must be active. Enabled stages run in this order: imported transforms → SBS → NSBS. The composed affine stack maps output coordinates to input coordinates. An imported stack must have one finite 2D affine transform per input Z-slice, with compatible shape metadata when present.
 
-The workflow writes `pre-align.json` and materializes the final image at `apply_pre_align/pre-align.ome.zarr` beneath `general.output_dirpath`. Intermediate volumes are materialized only when needed by subsequent stages. The `.amst2/run-identity.json` manifest detects changes to effective configuration and imported transforms; use a fresh output directory when those change.
+The workflow writes `pre-align.json` and materializes the final image at `apply_pre_align/pre-align.ome.zarr` beneath `general.output_dirpath`. Intermediate volumes are materialized only when needed by subsequent stages. The `.amst2/run-identity.json` manifest detects changes to effective configuration and imported transforms; by default rejects reuse when those change. Use `--force` to bypass this check and resume using existing completed results without automatically recomputing them. The recorded identity is not overwritten on a forced mismatch; manually remove affected and downstream outputs when recomputation is needed.
 
 For a worked example that imports Fiji SIFT transformations, skips SBS, and runs NSBS, see [Fiji SIFT alignment](fiji_sift_alignment.md).
 

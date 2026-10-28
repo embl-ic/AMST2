@@ -26,6 +26,9 @@ def _rule_all_inputs(wildcards):
     return inputs
 
 
+if run_info.get('run_small_jobs_locally', False):
+    localrules: create_ome_zarr, finalize_alignment_transforms
+
 rule all:
     input:
         _rule_all_inputs

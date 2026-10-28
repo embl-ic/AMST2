@@ -2,10 +2,18 @@
 import os
 
 
-def _run_amst(parameter_yaml, verbose=False):
+def _run_amst(parameter_yaml, verbose=False, unlock=False):
 
     from .lib import load_parameter_yaml
     parameter_dict = load_parameter_yaml(parameter_yaml)
+
+    if unlock:
+        from .lib import unlock_snakemake_workflows
+
+        unlock_snakemake_workflows(
+            parameter_dict, ['amst', 'apply_amst', 'amst_to_tif_stack']
+        )
+        return
 
     output_dirpath = parameter_dict['general']['output_dirpath']
 
@@ -82,6 +90,8 @@ def amst():
     )
 
     parser.add_argument('parameter_yaml', type=str)
+    parser.add_argument('--unlock', action='store_true',
+                        help='Unlock existing Snakemake caches and exit; do not use during active runs.')
     parser.add_argument('-v', '--verbose', action='store_true')
 
     args = parser.parse_args()
@@ -92,7 +102,7 @@ def amst():
     if verbose:
         print(f'parameter_yaml = {parameter_yaml}')
 
-    _run_amst(parameter_yaml, verbose=verbose)
+    _run_amst(parameter_yaml, verbose=verbose, unlock=args.unlock)
 
 
 def get_default_parameter_file():
@@ -127,6 +137,8 @@ def get_default_parameter_file():
                              '  Note: One Item consisting of group:parameter_name:value must not contain any spaces!\n'
                              '  Also note: You can generate any entry like this - also ones that have no effect!\n'
                              '  The idea of having this input argument is to make a workflow fully scriptable without the requirement for manually adjusting the parameter file.')
+    parser.add_argument('--run_small_jobs_locally', action='store_true',
+                        help='Set general:run_small_jobs_locally:true in the generated YAML')
     parser.add_argument('--slurm', action='store_true',
                         help='Creates the parameter file for a slurm cluster; Note that the compute settings may '
                              'require adjustment')
@@ -141,6 +153,10 @@ def get_default_parameter_file():
     param_pre_align_dirpath = args.param_pre_align_dirpath
     param_pre_align_transforms = args.param_pre_align_transforms
     params = args.params
+    if args.run_small_jobs_locally:
+        params = [] if params is None else params
+        if not any(item.startswith('general:run_small_jobs_locally:') for item in params):
+            params.append('general:run_small_jobs_locally:true')
     slurm = args.slurm
     verbose = args.verbose
 

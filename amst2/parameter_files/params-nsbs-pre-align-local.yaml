@@ -20,12 +20,11 @@ stack_to_ome_zarr:
   # When active = true, the input dataset will be converted to ome.zarr
   active: false
 
-workflow:
-  pre_existing_transforms: null
-  run_sbs: true
-  run_nsbs: true
+pre_existing_transforms:
+  active: false
 
 sbs_alignment:
+  active: true
   auto_mask: non-zero  # non-zero or variance
   gaussian_sigma: 2.0
   initialize_offsets_method: init_elx  # Possible methods: none, init_xcorr, init_elx
@@ -40,6 +39,7 @@ sbs_alignment:
   elx_maximum_number_of_iterations: 256  # Increase for finer alignment
 
 nsbs_alignment:
+  active: true
   z_step: 8  # Adjust the z-step if needed
   auto_mask: non-zero
   gaussian_sigma: 2.0

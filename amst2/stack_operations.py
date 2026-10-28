@@ -87,6 +87,7 @@ def snk_normalize_stack():
     src_dirpath = os.path.dirname(os.path.realpath(__file__))
 
     run_info = dict(
+        run_small_jobs_locally=args.run_small_jobs_locally,
         input_ome_zarr_filepath=input_ome_zarr_filepath,
         batch_ids=batch_ids,
         stack_shape=shape_h,

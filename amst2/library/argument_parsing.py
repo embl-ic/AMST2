@@ -92,6 +92,8 @@ def args_to_dict(args, fields):
 
 def add_snakemake_arguments_to_parser(parser):
 
+    parser.add_argument('--run_small_jobs_locally', action='store_true',
+                        help='Execute lightweight Snakemake rules locally')
     parser.add_argument('--dryrun', action='store_true',
                         help='Snakemake argument')
     parser.add_argument('--unlock', action='store_true',

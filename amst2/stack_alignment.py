@@ -102,6 +102,7 @@ def snk_default_amst_pre_alignment():
     src_dirpath = os.path.dirname(os.path.realpath(__file__))
 
     run_info = dict(
+        run_small_jobs_locally=args.run_small_jobs_locally,
         input_ome_zarr_filepath=input_ome_zarr_filepath,
         no_local_alignment=no_local_alignment,
         use_template_matching=template_roi is not None,
@@ -366,6 +367,7 @@ def snk_elastix_stack_alignment():
         transform = 'translation'
 
     run_info = dict(
+        run_small_jobs_locally=args.run_small_jobs_locally,
         input_ome_zarr_filepath=input_ome_zarr_filepath,
         stack_pattern=stack_pattern,
         stack_key=stack_key,
@@ -431,8 +433,8 @@ def snk_elastix_stack_alignment():
                 'create_ome_zarr',
                 'apply_final_transformations'
             ],
-            [16000, 8000, 1024, 8000],
-            [30, 5, 5, 30],
+            [16000, 1024, 8000],
+            [30, 5, 30],
             mem_args=mem,
             runtime_args=runtime
         )
@@ -531,6 +533,17 @@ def snk_apply_transformation():
         unit = store.metadata.units
     dtype = str(data_h.dtype)
 
+    if not no_autopad:
+        if len(input_transforms_filepaths) != 1 or not os.path.isfile(input_transforms_filepaths[0]):
+            raise ValueError('Auto-padding currently requires one affine JSON transform file')
+
+    prepared_transforms_filepath = os.path.join(
+        output_location_args['target_dirpath'], 'initial-padded.json'
+    ) if not no_autopad else None
+    prepared_shape_filepath = os.path.join(
+        output_location_args['target_dirpath'], 'initial-padded-shape.json'
+    ) if not no_autopad else None
+
     shapes = []
     for input_transforms_filepath in input_transforms_filepaths:
         if os.path.isdir(input_transforms_filepath):
@@ -565,6 +578,7 @@ def snk_apply_transformation():
     src_dirpath = os.path.dirname(os.path.realpath(__file__))
 
     run_info = dict(
+        run_small_jobs_locally=args.run_small_jobs_locally,
         input_ome_zarr_filepath=input_ome_zarr_filepath,
         input_transforms_filepaths=input_transforms_filepaths,
         stack_pattern=stack_pattern,
@@ -576,6 +590,8 @@ def snk_apply_transformation():
         resolution=resolution,
         unit=unit,
         no_autopad=no_autopad,
+        prepared_transforms_filepath=prepared_transforms_filepath,
+        prepared_shape_filepath=prepared_shape_filepath,
         resample_interpolator=resample_interpolator,
         **output_location_args,
         **common_args,
@@ -593,7 +609,8 @@ def snk_apply_transformation():
     args_to_snakemake_arguments(args, sn_args, output_location_args=output_location_args)
     sn_args.snakefile = Path(os.path.join(src_dirpath, 'snakemake_workflows/apply_transformation.snk'))
     sn_args.set_threads = dict(
-        apply_final_transformations=min(args.batch_size, args.cores, args.max_cores_per_task)
+        apply_final_transformations=min(args.batch_size, args.cores, args.max_cores_per_task),
+        prepare_transforms=min(args.cores, args.max_cores_per_task)
     )
 
     if args.cluster is not None:
@@ -604,11 +621,12 @@ def snk_apply_transformation():
         set_resources(
             sn_args,
             [
+                'prepare_transforms',
                 'create_ome_zarr',
                 'apply_final_transformations'
             ],
-            [1024, 8000],
-            [5, 30],
+            [8000, 1024, 8000],
+            [30, 5, 30],
             mem_args=mem,
             runtime_args=runtime
         )
@@ -718,6 +736,7 @@ def snk_template_matching_stack_alignment():
     src_dirpath = os.path.dirname(os.path.realpath(__file__))
 
     run_info = dict(
+        run_small_jobs_locally=args.run_small_jobs_locally,
         input_ome_zarr_filepath=input_ome_zarr_filepath,
         batch_ids=batch_ids,
         stack_shape=shape_h,

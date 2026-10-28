@@ -4,16 +4,36 @@ import os
 
 
 def _alignment_stages(parameter_dict):
-    """Return enabled stages in their execution order."""
-    workflow = parameter_dict.get('workflow', {})
-    initial = workflow.get('pre_existing_transforms')
+    """Validate explicit stage activation and return stages in execution order."""
+    if 'workflow' in parameter_dict:
+        raise ValueError(
+            "The 'workflow' section is no longer supported. Configure each "
+            "stage with an explicit 'active' boolean instead."
+        )
+
+    stage_keys = ('stack_to_ome_zarr', 'pre_existing_transforms',
+                  'sbs_alignment', 'nsbs_alignment', 'pre_align_to_tif_stack')
     stages = []
-    if initial:
-        stages.append(('initial', initial))
-    if workflow.get('run_sbs', True):
-        stages.append(('sbs', None))
-    if workflow.get('run_nsbs', True):
-        stages.append(('nsbs', None))
+    for key in stage_keys:
+        if key not in parameter_dict or not isinstance(parameter_dict[key], dict):
+            raise ValueError(f"Missing required stage section '{key}' (with 'active: true/false').")
+        settings = parameter_dict[key]
+        if type(settings.get('active')) is not bool:
+            raise ValueError(f"Stage '{key}' requires an explicit boolean 'active: true/false'.")
+        if not settings['active']:
+            continue
+        if key in ('stack_to_ome_zarr', 'pre_align_to_tif_stack'):
+            continue
+        if key == 'pre_existing_transforms':
+            filepath = settings.get('transform_filepath')
+            if not isinstance(filepath, str) or not filepath.strip():
+                raise ValueError(
+                    "Active stage 'pre_existing_transforms' requires 'transform_filepath'."
+                )
+            stages.append(('initial', filepath))
+        else:
+            stages.append((key.removesuffix('_alignment'), None))
+
     if not stages:
         raise ValueError('Enable at least one of initial transforms, SBS, or NSBS')
     return stages
@@ -54,8 +74,24 @@ def _compose_stage_transforms(transform_filepaths, output_filepath, verbose=Fals
     return output_filepath
 
 
-def _check_run_identity(parameter_dict, stages, output_dirpath):
-    """Reject reuse of a completed run with different effective inputs."""
+def _parameter_differences(previous, current, prefix=''):
+    """Return readable differences between two nested parameter dictionaries."""
+    differences = []
+    for key in sorted(set(previous) | set(current)):
+        name = f'{prefix}.{key}' if prefix else str(key)
+        if key not in previous:
+            differences.append(f'  {name}: added {current[key]!r}')
+        elif key not in current:
+            differences.append(f'  {name}: removed (was {previous[key]!r})')
+        elif isinstance(previous[key], dict) and isinstance(current[key], dict):
+            differences.extend(_parameter_differences(previous[key], current[key], name))
+        elif previous[key] != current[key]:
+            differences.append(f'  {name}: {previous[key]!r} -> {current[key]!r}')
+    return differences
+
+
+def _check_run_identity(parameter_dict, stages, output_dirpath, force=False):
+    """Check run identity; force permits reuse without changing recorded identity."""
     manifest_dirpath = os.path.join(output_dirpath, '.amst2')
     manifest = os.path.join(manifest_dirpath, 'run-identity.json')
     configuration = json.dumps(parameter_dict, sort_keys=True, default=str)
@@ -68,15 +104,33 @@ def _check_run_identity(parameter_dict, stages, output_dirpath):
                 'external_transforms': external}
     if os.path.isfile(manifest):
         with open(manifest) as handle:
-            if json.load(handle) != identity:
-                raise RuntimeError('Pre-align inputs or parameters changed. Use a fresh output directory.')
+            previous = json.load(handle)
+        if previous.get('configuration') != identity['configuration'] or previous.get('external_transforms') != external:
+            details = []
+            if previous.get('configuration') != identity['configuration']:
+                if isinstance(previous.get('parameters'), dict):
+                    details.extend(_parameter_differences(previous['parameters'], parameter_dict))
+                else:
+                    details.append('  Previous manifest has no parameter details (legacy format).')
+            if previous.get('external_transforms') != external:
+                details.append('  Imported transformation file paths or contents changed.')
+            message = ('Pre-align inputs or parameters changed:\n' + '\n'.join(details)
+                       + '\nExisting outputs may be incompatible. To resume without deleting '
+                       'completed results, use --force. Otherwise remove affected '
+                       'outputs explicitly before restarting.')
+            if not force:
+                raise RuntimeError(message)
+            print('WARNING: ' + message + '\nProceeding with --force; recorded identity unchanged.')
     elif any(os.scandir(output_dirpath)):
-        raise RuntimeError('Pre-align output directory contains untracked results. Use a fresh directory.')
+        message = ('Pre-align output directory contains untracked results. '
+                   'Use a fresh directory or --force to reuse existing outputs.')
+        if not force:
+            raise RuntimeError(message)
+        print('WARNING: ' + message + '\nProceeding with --force; no identity recorded.')
     else:
         os.makedirs(manifest_dirpath, exist_ok=True)
         with open(manifest, 'w') as handle:
-            json.dump(identity, handle, indent=2)
-
+            json.dump({**identity, 'parameters': parameter_dict}, handle, indent=2, default=str)
 
 
 def _validate_imported_affine_stack(filepath, input_dirpath, stack_key='s0', stack_pattern='*.tif'):
@@ -121,7 +175,7 @@ def _validate_imported_affine_stack(filepath, input_dirpath, stack_key='s0', sta
     return transforms
 
 
-def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
+def _run_pre_align(parameter_yaml, dryrun=False, verbose=False, force=False, unlock=False):
 
     from .lib import load_parameter_yaml
     from .lib import run_apply_transformation
@@ -129,6 +183,15 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
 
     parameter_dict = load_parameter_yaml(parameter_yaml)
     stages = _alignment_stages(parameter_dict)
+    if unlock:
+        from .lib import unlock_snakemake_workflows
+
+        stage_names = ['stack_to_ome_zarr', 'apply_initial_transforms',
+                       'sbs_alignment', 'nsbs_alignment', 'apply_pre_align',
+                       'pre_align_to_tif_stack']
+        unlock_snakemake_workflows(parameter_dict, stage_names)
+        return
+
     output_dirpath = parameter_dict['general']['output_dirpath']
     original_input = parameter_dict['general']['input_dirpath']
 
@@ -141,9 +204,9 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
                     stack_pattern=parameter_dict['general'].get('stack_pattern', '*.tif')
                 )
         os.makedirs(output_dirpath, exist_ok=True)
-        _check_run_identity(parameter_dict, stages, output_dirpath)
+        _check_run_identity(parameter_dict, stages, output_dirpath, force=force)
 
-    if parameter_dict.get('stack_to_ome_zarr', {}).get('active', False):
+    if parameter_dict['stack_to_ome_zarr']['active']:
         from .lib import run_stack_to_ome_zarr
         run_stack_to_ome_zarr(parameter_dict, parameter_key='stack_to_ome_zarr',
                               dryrun=dryrun, verbose=verbose)
@@ -159,9 +222,27 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
         if stage == 'initial':
             if not dryrun and not os.path.isfile(filepath):
                 raise FileNotFoundError(f'Initial transforms not found: {filepath}')
-            transforms.append(filepath)
-            if has_next_stage:
-                parameter_dict.setdefault('apply_initial_transforms', {})
+            effective_filepath = filepath
+            settings = parameter_dict['pre_existing_transforms']
+            initial_auto_pad = settings.get(
+                'auto_pad', parameter_dict['general'].get('auto_pad', True))
+            # Even without a following alignment stage, padding must run in
+            # Snakemake rather than on the workflow controller.
+            if has_next_stage or initial_auto_pad:
+                if 'output_filename' in settings:
+                    raise ValueError(
+                        'pre_existing_transforms.output_filename is not supported; '
+                        'the intermediate output is always initial.ome.zarr'
+                    )
+                parameter_dict['apply_initial_transforms'] = {
+                    key: value for key, value in settings.items()
+                    if key not in ('active', 'transform_filepath', 'auto_pad')
+                }
+                parameter_dict['apply_initial_transforms']['auto_pad'] = initial_auto_pad
+                if initial_auto_pad:
+                    effective_filepath = os.path.join(
+                        output_dirpath, 'apply_initial_transforms', 'initial-padded.json'
+                    )
                 run_apply_transformation(
                     parameter_dict, parameter_key='apply_initial_transforms',
                     transforms_filepath=filepath, input_dirpath=current_input,
@@ -171,6 +252,7 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
                 current_input = os.path.join(
                     output_dirpath, 'apply_initial_transforms/initial.ome.zarr'
                 )
+            transforms.append(effective_filepath)
         else:
             key = f'{stage}_alignment'
             parameter_dict.setdefault(key, {})['materialize_output'] = has_next_stage
@@ -182,7 +264,8 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
             transforms.append(os.path.join(output_dirpath, key, 'elastix.json'))
             if has_next_stage:
                 current_input = os.path.join(output_dirpath, key, f'{stage}.ome.zarr')
-        if stage != 'initial' or has_next_stage:
+        if stage != 'initial' or has_next_stage or (
+                stage == 'initial' and initial_auto_pad):
             if not dryrun and not os.path.exists(os.path.join(output_dirpath, done)):
                 return
 
@@ -192,6 +275,10 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
         print(f'Compose transforms in order: {transforms} -> {final_filepath}')
         if auto_pad:
             print(f'Apply auto-padding to final transforms: {final_filepath}')
+    elif (auto_pad and len(stages) == 1 and stages[0][0] == 'initial'
+          and initial_auto_pad):
+        # The imported stack was already globally padded by Snakemake.
+        _compose_stage_transforms(transforms, final_filepath, verbose=verbose)
     elif auto_pad:
         import tempfile
 
@@ -216,7 +303,7 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False):
     if not dryrun and not os.path.exists(os.path.join(output_dirpath, 'apply_pre_align/apply_pre_align.done')):
         return
 
-    if parameter_dict.get('pre_align_to_tif_stack', {}).get('active', False):
+    if parameter_dict['pre_align_to_tif_stack']['active']:
         from .lib import run_ome_zarr_to_stack
         run_ome_zarr_to_stack(
             parameter_dict, parameter_key='pre_align_to_tif_stack',
@@ -242,18 +329,25 @@ def pre_align():
     parser.add_argument('-d', '--dryrun', action='store_true',
                         help='Dry-run: Displays the amst2 commands that would be run.')
     parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument('--unlock', action='store_true',
+                        help='Unlock existing Snakemake caches and exit; do not use during active runs.')
+    parser.add_argument('--force', action='store_true',
+                        help='Allow resuming despite changed inputs or parameters; do not recompute completed steps.')
 
     args = parser.parse_args()
 
     parameter_yaml = args.parameter_yaml
     dryrun = args.dryrun
     verbose = args.verbose
+    force = args.force
+    unlock = args.unlock
 
     if verbose:
         print(f'parameter_yaml = {parameter_yaml}')
         print(f'dryrun = {dryrun}')
 
-    _run_pre_align(parameter_yaml, dryrun=dryrun, verbose=verbose)
+    _run_pre_align(parameter_yaml, dryrun=dryrun, verbose=verbose,
+                   force=force, unlock=unlock)
 
 
 def get_default_parameter_file():
@@ -294,6 +388,8 @@ def get_default_parameter_file():
                              '  The idea of having this input argument is to make a workflow fully scriptable without the requirement for manually adjusting the parameter file.')
     parser.add_argument('--fiji', metavar='AFFINE_JSON', type=str, default=None,
                         help='Use an imported affine stack (e.g. from Fiji SIFT) instead of SBS, followed by NSBS')
+    parser.add_argument('--run_small_jobs_locally', action='store_true',
+                        help='Set general:run_small_jobs_locally:true in the generated YAML')
     parser.add_argument('--slurm', action='store_true',
                         help='Creates the parameter file for a slurm cluster; Note that the compute settings may '
                              'require adjustment')
@@ -314,11 +410,16 @@ def get_default_parameter_file():
     if args.fiji is not None:
         # A preset, not a separate execution mode. Explicit --params may override it.
         params = [
-            f'workflow:pre_existing_transforms:{args.fiji}',
-            'workflow:run_sbs:false',
-            'workflow:run_nsbs:true',
+            'pre_existing_transforms:active:true',
+            f'pre_existing_transforms:transform_filepath:{args.fiji}',
+            'sbs_alignment:active:false',
+            'nsbs_alignment:active:true',
         ] + ([] if params is None else params)
     estimate_crop_xy = args.estimate_crop_xy
+    if args.run_small_jobs_locally:
+        params = [] if params is None else params
+        if not any(item.startswith('general:run_small_jobs_locally:') for item in params):
+            params.append('general:run_small_jobs_locally:true')
     slurm = args.slurm
 
     verbose = args.verbose

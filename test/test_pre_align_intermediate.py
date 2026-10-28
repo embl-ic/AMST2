@@ -35,11 +35,13 @@ class TestPreAlignIntermediate(unittest.TestCase):
                     'output_dirpath': os.path.join(directory, 'output'),
                     'auto_pad': False
                 },
-                'workflow': {
-                    'pre_existing_transforms': transforms,
-                    'run_sbs': sbs,
-                    'run_nsbs': nsbs
-                }
+                'stack_to_ome_zarr': {'active': False},
+                        'pre_align_to_tif_stack': {'active': False},
+                        'pre_existing_transforms': {
+                    'active': True, 'transform_filepath': transforms
+                },
+                'sbs_alignment': {'active': sbs},
+                'nsbs_alignment': {'active': nsbs}
             }
             with patch('amst2.workflows.lib.load_parameter_yaml', return_value=config), \
                     patch('amst2.workflows.lib.run_apply_transformation') as apply, \
