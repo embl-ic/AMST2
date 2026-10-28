@@ -223,8 +223,12 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False, force=False, unl
             if not dryrun and not os.path.isfile(filepath):
                 raise FileNotFoundError(f'Initial transforms not found: {filepath}')
             effective_filepath = filepath
-            if has_next_stage:
-                settings = parameter_dict['pre_existing_transforms']
+            settings = parameter_dict['pre_existing_transforms']
+            initial_auto_pad = settings.get(
+                'auto_pad', parameter_dict['general'].get('auto_pad', True))
+            # Even without a following alignment stage, padding must run in
+            # Snakemake rather than on the workflow controller.
+            if has_next_stage or initial_auto_pad:
                 if 'output_filename' in settings:
                     raise ValueError(
                         'pre_existing_transforms.output_filename is not supported; '
@@ -234,10 +238,8 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False, force=False, unl
                     key: value for key, value in settings.items()
                     if key not in ('active', 'transform_filepath', 'auto_pad')
                 }
-                auto_pad = settings.get('auto_pad',
-                                        parameter_dict['general'].get('auto_pad', True))
-                parameter_dict['apply_initial_transforms']['auto_pad'] = auto_pad
-                if auto_pad:
+                parameter_dict['apply_initial_transforms']['auto_pad'] = initial_auto_pad
+                if initial_auto_pad:
                     effective_filepath = os.path.join(
                         output_dirpath, 'apply_initial_transforms', 'initial-padded.json'
                     )
@@ -262,7 +264,8 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False, force=False, unl
             transforms.append(os.path.join(output_dirpath, key, 'elastix.json'))
             if has_next_stage:
                 current_input = os.path.join(output_dirpath, key, f'{stage}.ome.zarr')
-        if stage != 'initial' or has_next_stage:
+        if stage != 'initial' or has_next_stage or (
+                stage == 'initial' and initial_auto_pad):
             if not dryrun and not os.path.exists(os.path.join(output_dirpath, done)):
                 return
 
@@ -272,6 +275,10 @@ def _run_pre_align(parameter_yaml, dryrun=False, verbose=False, force=False, unl
         print(f'Compose transforms in order: {transforms} -> {final_filepath}')
         if auto_pad:
             print(f'Apply auto-padding to final transforms: {final_filepath}')
+    elif (auto_pad and len(stages) == 1 and stages[0][0] == 'initial'
+          and initial_auto_pad):
+        # The imported stack was already globally padded by Snakemake.
+        _compose_stage_transforms(transforms, final_filepath, verbose=verbose)
     elif auto_pad:
         import tempfile
 
